@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html><head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>SANDY - Malware Reverse Challenge - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="SANDY is a Huntress 2025 CTF reverse engineering challenge where you analyze a malicious binary, uncover its logic, and extract the hidden flag." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="https://iamleandrooooo.github.io/posts/sandy/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="SANDY - Malware Reverse Challenge">
+  <meta property="og:description" content="SANDY is a Huntress 2025 CTF reverse engineering challenge where you analyze a malicious binary, uncover its logic, and extract the hidden flag.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-10-03T00:00:00+00:00">
+    <meta property="article:modified_time" content="2025-10-03T00:00:00+00:00">
+    <meta property="article:tag" content="Reverse">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="SANDY - Malware Reverse Challenge">
+  <meta name="twitter:description" content="SANDY is a Huntress 2025 CTF reverse engineering challenge where you analyze a malicious binary, uncover its logic, and extract the hidden flag.">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="/">Home</a>
+		
+		<a href="/posts">All posts</a>
+		
+		<a href="/about">About</a>
+		
+		<a href="/tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">SANDY - Malware Reverse Challenge</h1>
+          <div class="meta">Posted on Oct 3, 2025</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          An AutoIt3-packed binary (&#34;Sandy&#34;) drops a second-stage PowerShell stager into an %APPDATA% directory; that PowerShell is heavily obfuscated and implements a crypto-stealer. Analysis required using an AutoIt3 decompiler to recover the AutoIt script and reveal the stager code, then deobfuscating the PowerShell to find the stealer logic and extract the hidden flag embedded inside the obfuscated script.
+        </div>
+        <section class="body">
+          <h1 id="challenge-description">Challenge Description</h1>
+<p><strong>Author:</strong> John Hammond</p>
+<p>My friend Sandy is really into cryptocurrencies! She&rsquo;s been trying to get me into it too, so she showed me a lot of Chrome extensions I could add to manage my wallets. Once I got everything sent up, she gave me this cool program!</p>
+<p>She says it adds better protection so my wallets can&rsquo;t get messed with by hackers.</p>
+<p>Sandy wouldn&rsquo;t lie to me, would she&hellip;? Sandy is the best!</p>
+<h2 id="a-note-for-the-reader">A Note for the Reader</h2>
+<p>Before jumping into the technical solution, a quick (and painful) anecdote: this challenge was meant to be solved with an AutoIt3 decompiler, something I didn’t even know existed at the time. Like an idiot, I went straight to my go-to tool (IDA) and tried to make sense of the binary. The main part of the malware was a huge Base64 blob that was dinamically loaded, it <em>was</em> the second-stage payload (the PowerShell stager). For some reason IDA chopped part of that blob(A HUGE ONE BTW), which I misread as an intentional part of the challenge. I spent time hunting for the &ldquo;missing&rdquo; fragments and carefully stitching the broken code back together. Long story short: I wasted hours trying to make sense of this when a language-specific decompiler would have exposed the WHOLE MALICIOUS SCRIPT immediately.</p>
+<p>Those were some truly hellish hours, but they&rsquo;re worth documenting: I’ll explain what I tried, why it failed, and how the AutoIt3 decompiler ultimately saved my ass from more useless hours of torture.</p>
+<p><strong>TL;DR:</strong> IDA trolled me hard, and I learned the hard way to check for language-specific tools first, before jumping head first with the tools that I usually use. (Being honest, I’ll probably make the same mistake again someday.) 😂</p>
+<h2 id="phase-1-chasing-ghosts">Phase 1: Chasing Ghosts</h2>
+<p>The challenge begins with a seemingly normal binary, which, upon inspection with PEStudio, turns out to be packed with UPX.</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/upx.png?raw=true" alt="UPX"></p>
+<p>I unpacked the file and ran <strong>floss</strong> to extract all the strings, and couldn&rsquo;t find anything relevant. I loaded the unpacked executable into PEStudio and was able to get the binary&rsquo;s manifest, which indicated the technology used to compile it. That&rsquo;s where I discovered it was an <strong>AutoIt3</strong> binary. I kinda ignored it at the time and shoved it to the back of my mind… Not a good idea. 💀</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/manifest.png?raw=true" alt="UPX"></p>
+<p>I loaded the binary into <strong>IDA</strong> and tried running it, only to be greeted with the following error:</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/idaerror.png?raw=true" alt="UPX"></p>
+<p>It seemed that one of the strings wasn&rsquo;t properly terminated, thus the message box. I copied the error message from the pop-up and checked if there was anything meaningful hidden in the Base64. Sure enough, there was part of a PowerShell script but it was incomplete.</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/powershell.png?raw=true" alt="UPX"></p>
+<p>This is where I would be for a day reversing the whole binary, literally chasing ghosts.</p>
+<p>So, let&rsquo;s go step by step. I decided to locate where the code was being loaded so I could dump it, assuming the challenge intentionally threw that error to force manual reversing. I traced the binary to a section that iterates (a <code>for</code> loop) over the payload size and loads the code piece by piece. I set a breakpoint in the loader function and inspected the <code>EAX</code> register, that held the pointer to the current line of the malware being dynamically loaded.</p>
+<blockquote>
+<p><strong>Note:</strong> I reached this part of the binary by actually running it, setting breakpoints, and following the rabbit hole until I found the function that caused the error.</p>
+</blockquote>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/1.png?raw=true" alt="UPX">
+    
+  </div>
+</div>
+
+<p>After doing some loops manually, I eventually noticed that it was a lot of endless and junk code, most likely to obfuscate or difficult the code analysis, like any malware has, really. I decided to do a python script that would trigger the breakpoint ONLY when the <code>EAX</code> register had the value that I was looking for.</p>
+<p>The script was the following:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-py" data-lang="py"><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_bytes
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> idc
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_kernwin
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>    eax_value <span style="color:#f92672">=</span> idc<span style="color:#f92672">.</span>get_reg_value(<span style="color:#e6db74">&#34;EAX&#34;</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> eax_value <span style="color:#f92672">and</span> eax_value <span style="color:#f92672">!=</span> idc<span style="color:#f92672">.</span>BADADDR:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># Type 0 = C-style null-terminated strings</span>
+</span></span><span style="display:flex;"><span>        string_data <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_strlit_contents(eax_value, <span style="color:#ae81ff">10000</span>, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> string_data <span style="color:#f92672">and</span> <span style="color:#e6db74">b</span><span style="color:#e6db74">&#34;Global $base64Chunks[]&#34;</span> <span style="color:#f92672">in</span> string_data:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Log to file</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">r</span><span style="color:#e6db74">&#34;C:\users\caralho\ida.txt&#34;</span>, <span style="color:#e6db74">&#34;a&#34;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>                f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;=== BREAKPOINT HIT - DEBUGGER PAUSED ===</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>                f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;EAX Pointer: </span><span style="color:#e6db74">{</span>hex(eax_value)<span style="color:#e6db74">}</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>                f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Full String: </span><span style="color:#e6db74">{</span>string_data<span style="color:#e6db74">}</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>                f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">&#34;-&#34;</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">50</span> <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>            ida_kernwin<span style="color:#f92672">.</span>msg(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;[BREAKPOINT HIT] String captured! Debugger paused.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>  <span style="color:#75715e"># Break</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>  <span style="color:#75715e"># No break</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>  <span style="color:#75715e"># No break</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>    ida_kernwin<span style="color:#f92672">.</span>msg(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;[ERROR] </span><span style="color:#e6db74">{</span>e<span style="color:#e6db74">}</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>  <span style="color:#75715e"># No break on error</span>
+</span></span></code></pre></div><p>The script begins by reading the <code>EAX</code> register with <code>idc.get_reg_value(&quot;EAX&quot;)</code>; that register holds the return value from the function that is loading the code. It immediately sanity-checks that pointer, if <code>eax_value</code> is zero or <code>idc.BADADDR</code>, the script returns <code>False</code> and does nothing, avoiding bogus reads.</p>
+<p>When the pointer looks valid, the script calls <code>ida_bytes.get_strlit_contents(eax_value, 10000, 0)</code> to read a C-style (null-terminated) string from that address. The value <code>10000</code> is intentionally large so the script can capture very long Base64 blobs or embedded scripts that wouldn&rsquo;t fit a small buffer. The raw bytes read from memory are then searched for the <code>Global $base64Chunks[]&quot;</code> part, which identifies the string that was throwing the error.</p>
+<p>If the marker is found, the script dumps the EAX value into a dump file.</p>
+<p>After writing the captured data the script returns <code>True</code>. The <code>True</code> value is how the breakpoint handler knows to pause execution at that moment, allowing to inspect memory manually. Any exceptions are caught and printed to IDA&rsquo;s messages, and the script returns <code>False</code> on error so it won&rsquo;t crash the debugging session.</p>
+<p>Sure enough the breakpoint is hit when the condition is met.</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/2.png?raw=true" alt="UPX"></p>
+<p>Before digging into the Base64 chunks, I wanted to know exactly which line of the code this fragment was coming from. To figure that out, I tracked the counter controlling the <code>for</code> loop, specifically the <code>inc ebx</code> instruction. By following that, I could map each dynamically loaded string back to its position in the AutoIt script.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/inc.png?raw=true" alt="UPX">
+    
+  </div>
+</div>
+
+<p>The counter&rsquo;s value was <code>1BD</code>, which converts from hex to decimal as 445, meaning this fragment came from line 445. Imagine trying to figure that out manually 😂.</p>
+<p>Anyway, with the dump in hand, I could finally see what the value actually was before moving on to inspect where the code was being sliced and loaded. In my mind, that made the most sense as the next step.</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/3.png?raw=true" alt="UPX"></p>
+<p>I practically pulled a SpongeBob <em>Chinese face</em> the moment I inspected the dumped value, it was exactly the same as the error string. My jaw dropped. After a few seconds of head-scratching I came up with two possibilities: either the challenge expects us to patch this loader code on-the-fly and let it finish so we can dump the rest of the AutoIt script (and recover the remaining Base64), or there&rsquo;s an earlier routine, way before the spot I was tracing, that&rsquo;s failing and causing the loader to break before it ever reaches the real payload.</p>
+<p>Honestly, the first idea felt right, so I wrote a tiny Python patcher to close the Base64 string by appending <code>&quot;]</code> to the end. The plan was simple: patch the broken string in-memory so the loader would stop erroring, let the program continue, and (hopefully) stream out the rest of the AutoIt script, including the remaining Base64 chunks. It was a bit of duct-tape reasoning, but worth a shot.</p>
+<p>The script was the following:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-py" data-lang="py"><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_bytes
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> idc
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_kernwin
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>    eax_value <span style="color:#f92672">=</span> idc<span style="color:#f92672">.</span>get_reg_value(<span style="color:#e6db74">&#34;EAX&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> eax_value <span style="color:#f92672">and</span> eax_value <span style="color:#f92672">!=</span> idc<span style="color:#f92672">.</span>BADADDR:
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># First, check if this is our target string for patching</span>
+</span></span><span style="display:flex;"><span>        string_data <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_strlit_contents(eax_value, <span style="color:#ae81ff">8190</span>, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> string_data <span style="color:#f92672">and</span> <span style="color:#e6db74">b</span><span style="color:#e6db74">&#34;Global $base64Chunks[]&#34;</span> <span style="color:#f92672">in</span> string_data:
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Find the actual length (position of null terminator)</span>
+</span></span><span style="display:flex;"><span>            length <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">while</span> <span style="color:#66d9ef">True</span>:
+</span></span><span style="display:flex;"><span>                lo <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_byte(eax_value <span style="color:#f92672">+</span> length)
+</span></span><span style="display:flex;"><span>                hi <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_byte(eax_value <span style="color:#f92672">+</span> length <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> lo <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">and</span> hi <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>                length <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>                
+</span></span><span style="display:flex;"><span>            end_of_string_addr <span style="color:#f92672">=</span> eax_value <span style="color:#f92672">+</span> length
+</span></span><span style="display:flex;"><span>            ida_bytes<span style="color:#f92672">.</span>patch_byte(end_of_string_addr, <span style="color:#ae81ff">0x22</span>)
+</span></span><span style="display:flex;"><span>            ida_bytes<span style="color:#f92672">.</span>patch_byte(end_of_string_addr <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0x00</span>)
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>            ida_bytes<span style="color:#f92672">.</span>patch_byte(end_of_string_addr <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">0x5d</span>)
+</span></span><span style="display:flex;"><span>            ida_bytes<span style="color:#f92672">.</span>patch_byte(end_of_string_addr <span style="color:#f92672">+</span> <span style="color:#ae81ff">3</span>, <span style="color:#ae81ff">0x00</span>)
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>            ida_bytes<span style="color:#f92672">.</span>patch_byte(end_of_string_addr <span style="color:#f92672">+</span> <span style="color:#ae81ff">4</span>, <span style="color:#ae81ff">0x00</span>)
+</span></span><span style="display:flex;"><span>            ida_bytes<span style="color:#f92672">.</span>patch_byte(end_of_string_addr <span style="color:#f92672">+</span> <span style="color:#ae81ff">5</span>, <span style="color:#ae81ff">0x00</span>)
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">r</span><span style="color:#e6db74">&#34;C:\users\caralho\eax_dump.txt&#34;</span>, <span style="color:#e6db74">&#34;a&#34;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>            f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;EAX: </span><span style="color:#e6db74">{</span>hex(eax_value)<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Read string data specifically for dumping (fresh read)</span>
+</span></span><span style="display:flex;"><span>            dump_string_data <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_strlit_contents(eax_value, <span style="color:#ae81ff">16380</span>, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> dump_string_data:
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e"># Write the FULL string without truncation</span>
+</span></span><span style="display:flex;"><span>                f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34; -&gt; String: &#34;</span>)
+</span></span><span style="display:flex;"><span>                f<span style="color:#f92672">.</span>write(dump_string_data<span style="color:#f92672">.</span>decode(<span style="color:#e6db74">&#39;utf-8&#39;</span>, errors<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;replace&#39;</span>))  <span style="color:#75715e"># Decode properly</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e"># If not a string, show raw bytes</span>
+</span></span><span style="display:flex;"><span>                raw_bytes <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_bytes(eax_value, <span style="color:#ae81ff">32</span>)  <span style="color:#75715e"># First 32 bytes</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> raw_bytes:
+</span></span><span style="display:flex;"><span>                    f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34; -&gt; Bytes: </span><span style="color:#e6db74">{</span>raw_bytes<span style="color:#f92672">.</span>hex()<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>            f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Return False to NOT break - let program continue running</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">r</span><span style="color:#e6db74">&#34;C:\users\caralho\eax_dump.txt&#34;</span>, <span style="color:#e6db74">&#34;a&#34;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>        f<span style="color:#f92672">.</span>write(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;ERROR: </span><span style="color:#e6db74">{</span>e<span style="color:#e6db74">}</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">False</span>
+</span></span></code></pre></div><p>The script starts by reading the <code>EAX</code> register with <code>idc.get_reg_value(&quot;EAX&quot;)</code> and verifies the pointer is valid. If it is, the script reads a candidate C-style string from memory using <code>ida_bytes.get_strlit_contents(eax_value, 8190, 0)</code> and checks whether that string contains the AutoIt marker <code>b&quot;Global $base64Chunks[]&quot;</code>. If the marker is present, the script assumes this is the broken Base64-containing string that needs to be fixed. The value of the string <code>8190</code> was calculated using the previous string length multiplied by 2. Since we are dealing with UTF-16, each character takes 2 bytes, and the original string size was 4095 characters. Multiplying 4095 by 2 gives 8190 bytes, which is the length we pass to <code>get_strlit_contents</code> to ensure we read the full string before hitting the null terminator.</p>
+<p>To find the end of the string it doesn’t rely on a simple <code>get_strlit_contents</code> length, instead it walks the bytes two at a time with <code>ida_bytes.get_byte(eax_value + length)</code> and <code>ida_bytes.get_byte(eax_value + length + 1)</code> until it finds two consecutive zero bytes. That two-byte step is intentional: like previously said, the string in memory is UTF‑16/wide (little-endian), so characters are stored as 2‑byte code units and the terminator is a double‑null. Once it locates the terminator, it computes <code>end_of_string_addr</code> and then writes a small patch sequence at and after that address:</p>
+<ul>
+<li><code>ida_bytes.patch_byte(end_of_string_addr, 0x22)</code> writes <code>&quot;</code> (double-quote).</li>
+<li><code>ida_bytes.patch_byte(end_of_string_addr + 1, 0x00)</code> writes the NULL byte that follows (UTF‑16).</li>
+<li><code>ida_bytes.patch_byte(end_of_string_addr + 2, 0x5d)</code> writes <code>]</code>.</li>
+<li><code>ida_bytes.patch_byte(end_of_string_addr + 3, 0x00)</code> the following NULL for UTF‑16.</li>
+<li><code>ida_bytes.patch_byte(end_of_string_addr + 4, 0x00)</code> and <code>+5</code> write the terminating double‑NULL so the string is properly terminated.</li>
+</ul>
+<p>Those patches effectively append <code>&quot;]</code> to the wide string and then re-terminate it, closing whatever truncated Base64 array syntax was causing the earlier runtime error.</p>
+<p>The <code>EAX</code> register is then dumped one by one, to get the whole scipt.</p>
+<p>I got everything ready, and tadaaaaaaaaaan, the program doesn&rsquo;t break anymore and advances to the next step, which previously failed because of that annoying string error. But best of all, I finally have the full script dump in my hands or at least I thought so&hellip;</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/5.png?raw=true" alt="UPX">
+    
+  </div>
+</div>
+
+<p>Errrrmmm, Houston, we have a problem. A big one. After poking through the dumped AutoIt script I still couldn&rsquo;t find the rest of the Base64 chunks, so it looks like my patching hack wasn&rsquo;t the intended path after all.</p>
+<p>From the portion I do have, the logic is clear: the script concatenates and decodes Base64 chunks, decodes it, writes the resulting PowerShell payload into <code>%APPDATA%</code> (or a Temp subfolder there), and then executes that PowerShell stager. But since I don&rsquo;t have the complete PowerShell script, I can&rsquo;t say exactly what it does, only that it &ldquo;does things.&rdquo; And those unknown things could be the crypto‑stealer logic (and the hidden flag), so the hunt continues.</p>
+<p>From the dump I was able to recreate the malware&rsquo;s behavior. I changed the write‑to‑disk portion to make the output easier to obtain; apart from that modification, this is an accurate reconstruction.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-AutoIt" data-lang="AutoIt"><span style="display:flex;"><span>Global $base64Chunks[] <span style="color:#f92672">=</span> [ _<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#f92672">&lt;</span>Base64 incomplete code <span style="color:#960050;background-color:#1e0010">–</span> redacted for readability<span style="color:#f92672">&gt;</span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Func _Base64Decode($pKkevvyiPlecxgqr)
+</span></span><span style="display:flex;"><span>    Local $idPpaetop <span style="color:#f92672">=</span> <span style="color:#a6e22e">ObjCreate</span>(<span style="color:#e6db74">&#34;MSXML2.DOMDocument&#34;</span>)
+</span></span><span style="display:flex;"><span>    Local $var_3322 <span style="color:#f92672">=</span> $idPpaetop<span style="color:#f92672">.</span>createElement(<span style="color:#e6db74">&#34;base64&#34;</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span>    $var_3322<span style="color:#f92672">.</span>dataType <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;bin.base64&#34;</span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span>    $var_3322<span style="color:#f92672">.</span>text <span style="color:#f92672">=</span> $pKkevvyiPlecxgqr
+</span></span><span style="display:flex;"><span>Return $var_3322<span style="color:#f92672">.</span>nodeTypedValue
+</span></span><span style="display:flex;"><span>EndFunc
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Func _Dec($var_3357)
+</span></span><span style="display:flex;"><span>    Return <span style="color:#a6e22e">BinaryToString</span>(_Base64Decode($var_3357), <span style="color:#ae81ff">4</span>)
+</span></span><span style="display:flex;"><span>EndFunc
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Local $x1 <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>Local $x2 <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>For $x2 <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span> To <span style="color:#a6e22e">UBound</span>($base64Chunks) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span>    $x1 <span style="color:#f92672">&amp;=</span> $base64Chunks[$x2]
+</span></span><span style="display:flex;"><span>Next
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Local $x3 <span style="color:#f92672">=</span> _Dec($x1)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span>$x3 <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;$e1 = &#39;lfdfzpzpiw&#39;&#34;</span> <span style="color:#f92672">&amp;</span> @CRLF <span style="color:#f92672">&amp;</span> <span style="color:#e6db74">&#34;$d1 = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($e1))&#34;</span> <span style="color:#f92672">&amp;</span> @CRLF <span style="color:#f92672">&amp;</span> <span style="color:#e6db74">&#34;Invoke-Expression $d1&#34;</span> <span style="color:#f92672">&amp;</span> @CRLF <span style="color:#f92672">&amp;</span> <span style="color:#e6db74">&#34;$e2 = &#39;gecwwiswie&#39;&#34;</span> <span style="color:#f92672">&amp;</span> @CRLF <span style="color:#f92672">&amp;</span> <span style="color:#e6db74">&#34;$d2 = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($e2))&#34;</span> <span style="color:#f92672">&amp;</span> @CRLF <span style="color:#f92672">&amp;</span> <span style="color:#e6db74">&#34;Invoke-Expression $d2&#34;</span> <span style="color:#f92672">&amp;</span> @CRLF <span style="color:#f92672">&amp;</span> $x3<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#a6e22e">FileWrite</span>(<span style="color:#e6db74">&#34;C:\Users\Caralho\script.ps1&#34;</span>, $x3)<span style="color:#960050;background-color:#1e0010">
+</span></span></span></code></pre></div><p>But then again, here I am with everything <strong>except</strong> the full Base64 blob that&rsquo;s the backbone of this malware. I started poking around the binary for places the code gets loaded.</p>
+<p>I found the first loader invocation and began digging into the function. At the very start of the routine an address is moved into the register <code>EDI</code>, and immediately afterwards that pointer is dereferenced, it points to the in‑memory string the program later uses. I thought <strong>“AAAH HA! FOUND YOU!”</strong>, only to discover the string was the exact same truncated Base64 fragment.</p>
+<p>Before showing you the end result that made me want to throw myself out the window, here are the steps I followed.</p>
+<p>I basically wrote a Python script to trigger the breakpoint when the register that was used for the count would hit <strong>443</strong>.<br>
+Why <strong>443</strong>? I wanted a bit of &ldquo;distance&rdquo; to analyze before hitting line <strong>445</strong>, which is the one containing the Base64 code.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-py" data-lang="py"><span style="display:flex;"><span><span style="color:#f92672">import</span> idc
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_kernwin
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Get EAX value as number</span>
+</span></span><span style="display:flex;"><span>eax_value <span style="color:#f92672">=</span> idc<span style="color:#f92672">.</span>get_reg_value(<span style="color:#e6db74">&#34;EAX&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Just display the numeric value</span>
+</span></span><span style="display:flex;"><span>ida_kernwin<span style="color:#f92672">.</span>msg(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;EAX value: </span><span style="color:#e6db74">{</span>eax_value<span style="color:#e6db74">}</span><span style="color:#e6db74"> (0x</span><span style="color:#e6db74">{</span>eax_value<span style="color:#e6db74">:</span><span style="color:#e6db74">X</span><span style="color:#e6db74">}</span><span style="color:#e6db74">)</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># If you want to check if it&#39;s 443 specifically:</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> eax_value <span style="color:#f92672">==</span> <span style="color:#ae81ff">443</span>:
+</span></span><span style="display:flex;"><span>    ida_kernwin<span style="color:#f92672">.</span>msg(<span style="color:#e6db74">&#34;EAX equals 443!</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">True</span>
+</span></span></code></pre></div><p>After triggering the breakpoint, I stepped manually until I hit the count register of <strong>445</strong>.<br>
+Before executing the code, I calculated the next offset for the dereferenced address that would hit the code for line <strong>445</strong>, and dumped it with the following script:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-py" data-lang="py"><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_bytes
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> ida_segment
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> os
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># --- Configuration ---</span>
+</span></span><span style="display:flex;"><span>start_ea <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x292FC74</span>   <span style="color:#75715e"># Start of your data</span>
+</span></span><span style="display:flex;"><span>output_file <span style="color:#f92672">=</span> <span style="color:#e6db74">r</span><span style="color:#e6db74">&#34;C:\Users\caralho\Desktop\dump.txt&#34;</span>  <span style="color:#75715e"># Change path as needed</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># --- Determine the segment end ---</span>
+</span></span><span style="display:flex;"><span>seg <span style="color:#f92672">=</span> ida_segment<span style="color:#f92672">.</span>getseg(start_ea)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> seg:
+</span></span><span style="display:flex;"><span>    max_len <span style="color:#f92672">=</span> seg<span style="color:#f92672">.</span>end_ea <span style="color:#f92672">-</span> start_ea
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>    max_len <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x10000</span>  <span style="color:#75715e"># fallback if segment not found</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># --- Read bytes dynamically until double null (UTF-16LE) ---</span>
+</span></span><span style="display:flex;"><span>data <span style="color:#f92672">=</span> bytearray()
+</span></span><span style="display:flex;"><span>offset <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> offset <span style="color:#f92672">&lt;</span> max_len:
+</span></span><span style="display:flex;"><span>    b1 <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_byte(start_ea <span style="color:#f92672">+</span> offset)
+</span></span><span style="display:flex;"><span>    b2 <span style="color:#f92672">=</span> ida_bytes<span style="color:#f92672">.</span>get_byte(start_ea <span style="color:#f92672">+</span> offset <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> b1 <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">and</span> b2 <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>    data<span style="color:#f92672">.</span>append(b1)
+</span></span><span style="display:flex;"><span>    data<span style="color:#f92672">.</span>append(b2)
+</span></span><span style="display:flex;"><span>    offset <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>  <span style="color:#75715e"># UTF-16LE uses 2 bytes per character</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># --- Decode UTF-16LE ---</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span>:
+</span></span><span style="display:flex;"><span>    text <span style="color:#f92672">=</span> data<span style="color:#f92672">.</span>decode(<span style="color:#e6db74">&#34;utf-16le&#34;</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">except</span> <span style="color:#a6e22e">Exception</span> <span style="color:#66d9ef">as</span> e:
+</span></span><span style="display:flex;"><span>    print(<span style="color:#e6db74">&#34;Decoding failed:&#34;</span>, e)
+</span></span><span style="display:flex;"><span>    text <span style="color:#f92672">=</span> data<span style="color:#f92672">.</span>hex()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># --- Save to file ---</span>
+</span></span><span style="display:flex;"><span>os<span style="color:#f92672">.</span>makedirs(os<span style="color:#f92672">.</span>path<span style="color:#f92672">.</span>dirname(output_file), exist_ok<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">with</span> open(output_file, <span style="color:#e6db74">&#34;w&#34;</span>, encoding<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;utf-8&#34;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>    f<span style="color:#f92672">.</span>write(text)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>print(<span style="color:#e6db74">&#34;Dump saved to:&#34;</span>, output_file)
+</span></span><span style="display:flex;"><span>print(<span style="color:#e6db74">&#34;Contents:</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, text)
+</span></span></code></pre></div><p>This was the sad output of the script.</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/deref1.png?raw=true" alt="UPX"></p>
+<p>The output left me <strong>extremely annoyed</strong>. Every idea I had in mind, every logical approach I tried against this challenge had failed. I found myself up against a wall with no clear direction.</p>
+<p>This is where I took a step back and started thinking about other ways to solve the challenge, because obviously what I was doing wasn&rsquo;t cutting it.</p>
+<h2 id="phase-2-who-you-gonna-call">Phase 2: Who You Gonna Call?</h2>
+<p>After stepping back from my tunnel vision, I decided to look into the technology itself, specifically what AutoIt3 had to offer. That&rsquo;s when I stumbled across something game-changing: <strong>there&rsquo;s actually a decompiler that can recover the original script</strong>.</p>
+<p>According to the <a href="https://www.autoitscript.com/wiki/Decompiling_FAQ">AutoIt3 Decompiling FAQ</a>:</p>
+<blockquote>
+<p><em>If the version of AutoIt is v3.2.5.1 or lower, then the decompiler is located at<br>
+<code>C:\Program Files\AutoIt3\Extras\Exe2Aut\Exe2Aut.exe</code> by default.</em></p>
+</blockquote>
+<p>This was a huge breakthrough. The manifest we had enumerated earlier showed that our script version was <strong>3.0.0.0</strong>, which falls right within the range of decompilable versions. Finally, I was back on track with this challenge.</p>
+<p>After a bit of trial and error, I finally landed on the version that worked with the binary. I went through a bunch of different installers, most of them just threw errors for reasons unknown.</p>
+<p>Thankfully, AutoIt maintains a fantastic <a href="https://www.autoitscript.com/autoit3/files/archive/autoit/">archive of installers</a>, which saved me a ton of time (and frustration).</p>
+<p>Huge shoutout to that archive, all my homies love that archive!</p>
+<p>The version that finally worked for this binary was <strong>autoit-v3.2.4.0-setup.exe</strong>.<br>
+With it, I was able to successfully recover the script straight from the binary.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/convert.png?raw=true" alt="UPX">
+    
+  </div>
+</div>
+
+<p>And the script</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/script.png?raw=true" alt="UPX"></p>
+<p>After analysing the extracted the script, I was able to get the whole base64 string, and let me tell you something, <strong>LET ME TELL YOU SOMETHING</strong>, it was huge, like, I was like 1/100 of it from IDA. So basically IDA was trolling me, very hard.</p>
+<p>I extracted the script and perform a normal base64 decode with Cyberchef, and it resulted in this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>$encodedScript = <span style="color:#e6db74">&#34;&lt;redacted base64 for readability&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>$decodedScript = [<span style="color:#66d9ef">System.Text.Encoding</span>]::Unicode.GetString([<span style="color:#66d9ef">System.Convert</span>]::FromBase64String($encodedScript))
+</span></span><span style="display:flex;"><span>Invoke-Expression $decodedScript
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$encodedScript = <span style="color:#e6db74">&#34;&lt;redacted base64 for readability&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>$decodedScript = [<span style="color:#66d9ef">System.Text.Encoding</span>]::Unicode.GetString([<span style="color:#66d9ef">System.Convert</span>]::FromBase64String($encodedScript))
+</span></span><span style="display:flex;"><span>Invoke-Expression $decodedScript
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>...
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$encodedScript = <span style="color:#e6db74">&#34;&lt;redacted base64 for readability&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>$decodedScript = [<span style="color:#66d9ef">System.Text.Encoding</span>]::Unicode.GetString([<span style="color:#66d9ef">System.Convert</span>]::FromBase64String($encodedScript))
+</span></span><span style="display:flex;"><span>Invoke-Expression $decodedScript
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$encodedJson = <span style="color:#e6db74">&#34;&lt;redacted base64 for readability&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>Invoke-Expression ([<span style="color:#66d9ef">System.Text.Encoding</span>]::UTF8.GetString([<span style="color:#66d9ef">System.Convert</span>]::FromBase64String($encodedJson)))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$encodedScript = <span style="color:#e6db74">&#34;&lt;redacted base64 for readability&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>$decodedScript = [<span style="color:#66d9ef">System.Text.Encoding</span>]::Unicode.GetString([<span style="color:#66d9ef">System.Convert</span>]::FromBase64String($encodedScript))
+</span></span><span style="display:flex;"><span>Invoke-Expression $decodedScript
+</span></span></code></pre></div><p>This code takes a Base64-encoded string assigned to <code>$encodedScript</code>, decodes it from Base64 into a Unicode string, and then immediately executes the decoded content in memory using <code>Invoke-Expression</code>. In other words, the script is just a loader: it hides the real payload inside Base64 and then runs it dynamically after decoding.</p>
+<p>If we decode the base64, the code now has an AES decryption routine:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>$base64coded = <span style="color:#e6db74">&#34;&lt;redacted base64 for readability&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>$base64EncryptedFunction = $base64coded.Substring(<span style="color:#ae81ff">32</span>, $base64coded.Length - <span style="color:#ae81ff">64</span>)
+</span></span><span style="display:flex;"><span>$key1 = <span style="color:#e6db74">&#34;eeJsXD3VT2a7iFMF&#34;</span>
+</span></span><span style="display:flex;"><span>$key2 = <span style="color:#e6db74">&#34;4QK0Zm3Qri61BgF8&#34;</span>
+</span></span><span style="display:flex;"><span>$key3 = <span style="color:#e6db74">&#34;AGAuSHwl7pZo1uQL&#34;</span>
+</span></span><span style="display:flex;"><span>$fullKey = $key1 + $key2 + $key3
+</span></span><span style="display:flex;"><span>$salt = <span style="color:#e6db74">&#34;nBYiV2b8wVrdqsCY&#34;</span>
+</span></span><span style="display:flex;"><span>$keyDerivation = [<span style="color:#66d9ef">System.Security.Cryptography.Rfc2898DeriveBytes</span>]::new($fullKey, [<span style="color:#66d9ef">System.Text.Encoding</span>]::UTF8.GetBytes($salt), <span style="color:#ae81ff">1000</span>)
+</span></span><span style="display:flex;"><span>$keyBytes = $keyDerivation.GetBytes(<span style="color:#ae81ff">32</span>)
+</span></span><span style="display:flex;"><span>$iv = <span style="color:#e6db74">&#34;qGCve1NYklJH6BIV&#34;</span>
+</span></span><span style="display:flex;"><span>$ivBytes = [<span style="color:#66d9ef">System.Text.Encoding</span>]::UTF8.GetBytes($iv)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> ($ivBytes.Length <span style="color:#f92672">-lt</span> <span style="color:#ae81ff">16</span>) { $ivBytes = $ivBytes + @(<span style="color:#ae81ff">0</span>) * (<span style="color:#ae81ff">16</span> - $ivBytes.Length) } <span style="color:#66d9ef">elseif</span> ($ivBytes.Length <span style="color:#f92672">-gt</span> <span style="color:#ae81ff">16</span>) { $ivBytes = $ivBytes[<span style="color:#ae81ff">0</span>.<span style="color:#ae81ff">.15</span>] }
+</span></span><span style="display:flex;"><span>$aes = [<span style="color:#66d9ef">System.Security.Cryptography.Aes</span>]::Create()
+</span></span><span style="display:flex;"><span>$aes.Key = $keyBytes
+</span></span><span style="display:flex;"><span>$aes.IV = $ivBytes
+</span></span><span style="display:flex;"><span>$decryptor = $aes.CreateDecryptor()
+</span></span><span style="display:flex;"><span>$encryptedBytes = [<span style="color:#66d9ef">System.Convert</span>]::FromBase64String($base64EncryptedFunction)
+</span></span><span style="display:flex;"><span>$decryptedBytes = $decryptor.TransformFinalBlock($encryptedBytes, <span style="color:#ae81ff">0</span>, $encryptedBytes.Length)
+</span></span><span style="display:flex;"><span>$memoryStream = New-Object System.IO.MemoryStream(, $decryptedBytes)
+</span></span><span style="display:flex;"><span>$gzipStream = New-Object System.IO.Compression.GZipStream($memoryStream, [<span style="color:#66d9ef">System.IO.Compression.CompressionMode</span>]::Decompress)
+</span></span><span style="display:flex;"><span>$streamReader = New-Object System.IO.StreamReader($gzipStream)
+</span></span><span style="display:flex;"><span>$decryptedFunction = $streamReader.ReadToEnd()
+</span></span><span style="display:flex;"><span>Invoke-Expression $decryptedFunction
+</span></span></code></pre></div><p>This code takes a Base64-encoded string and trims off the first 32 and last 32 characters, leaving the portion in the middle to be used as the encrypted payload. It then reconstructs an AES key by concatenating three hardcoded key fragments, applying PBKDF2 (via <code>Rfc2898DeriveBytes</code>) with a salt and 1000 iterations, and extracting 32 key bytes. An IV is also prepared from another hardcoded string, adjusted to exactly 16 bytes.</p>
+<p>With these values, the script creates an AES decryptor and applies it to the Base64-decoded payload. The decrypted data is then passed through a GZip stream for decompression, producing the final plaintext code. This code is read into memory and immediately executed with <code>Invoke-Expression</code>.</p>
+<p>In short, the script hides its real functionality by embedding an AES-encrypted, GZip-compressed payload inside a Base64 string, and only reveals and runs it at runtime.</p>
+<p>Many of these code sections were essentially dead weight. For example, many routines did nothing useful and simply returned <code>null</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span><span style="color:#66d9ef">function</span> FvFunction {
+</span></span><span style="display:flex;"><span>    $fveData = @(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&lt;redacted base64&gt;&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&lt;redacted base64&gt;&#34;</span>
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> $null
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The core of the script was, unsurprisingly, a crypto stealer: it crawled browser extensions (Metamask and similar wallets) looking for stored wallet data and exfiltrated anything it could grab. After slogging through the obfuscated mess and decoding the relevant pieces, I finally uncovered the flag. In short, the <code>$encodedJson</code> blob once decoded contains a JSON structure that holds the flag in one part of it.</p>
+<p>The retrieval of the flag can be seen in the following image:</p>
+<p><img src="https://github.com/IamLeandrooooo/huntressWriteUp/blob/main/images/SANDI/flag.png?raw=true" alt="UPX"></p>
+<p>To wrap up: I really enjoyed this challenge. In hindsight it would have been much smoother if I&rsquo;d done a bit more research before diving in head-first, but the trial-and-error was part of the fun. Tinkering in IDA, tracing loaders, and chasing down that stubborn Base64 string made for a satisfying (if occasionally irritating) ride.</p>
+<p>Did I learn something new? Absolutely, I feel that I always do!</p>
+<p>Did you learn something from this writeup? Maybe, and if not, at least take my mistake as a friendly reminder: don&rsquo;t be as stubborn as I was. Don’t waste hours bashing your head against the same wall. Step back, change your approach, and the path forward usually appears.</p>
+<p>In other words, don&rsquo;t be stupid like I was 😂</p>
+
+        </section>
+        <div class="post-tags">
+          
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2025  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+</div>
+    </body>
+</html>
