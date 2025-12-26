@@ -2,31 +2,31 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Tags on Leandro&#39;s Code Cave</title>
-    <link>http://localhost:1313/tags/</link>
+    <link>https://iamleandrooooo.github.io/tags/</link>
     <description>Recent content in Tags on Leandro&#39;s Code Cave</description>
     <generator>Hugo</generator>
     <language>en-us</language>
     <lastBuildDate>Fri, 03 Oct 2025 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/tags/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://iamleandrooooo.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Reverse</title>
-      <link>http://localhost:1313/tags/reverse/</link>
+      <link>https://iamleandrooooo.github.io/tags/reverse/</link>
       <pubDate>Fri, 03 Oct 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/tags/reverse/</guid>
+      <guid>https://iamleandrooooo.github.io/tags/reverse/</guid>
       <description></description>
     </item>
     <item>
       <title>Malware-Analysis</title>
-      <link>http://localhost:1313/tags/malware-analysis/</link>
+      <link>https://iamleandrooooo.github.io/tags/malware-analysis/</link>
       <pubDate>Sat, 13 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/tags/malware-analysis/</guid>
+      <guid>https://iamleandrooooo.github.io/tags/malware-analysis/</guid>
       <description></description>
     </item>
     <item>
       <title>Penetration Testing</title>
-      <link>http://localhost:1313/tags/penetration-testing/</link>
+      <link>https://iamleandrooooo.github.io/tags/penetration-testing/</link>
       <pubDate>Fri, 12 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/tags/penetration-testing/</guid>
+      <guid>https://iamleandrooooo.github.io/tags/penetration-testing/</guid>
       <description></description>
     </item>
   </channel>
