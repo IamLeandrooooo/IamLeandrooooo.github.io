@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html><head lang="en"><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Automating SQL Server Linked-Server Password Recovery with PowerShell - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="A PowerShell toolkit that automates enabling TCP/IP, adding -T7806, enabling the DAC, and decrypting SQL Server linked-server passwords - for legal, authorized use only." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="http://localhost:1313/posts/sqlserverlinkedserverspasswords/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="Automating SQL Server Linked-Server Password Recovery with PowerShell">
+  <meta property="og:description" content="A PowerShell toolkit that automates enabling TCP/IP, adding -T7806, enabling the DAC, and decrypting SQL Server linked-server passwords - for legal, authorized use only.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-09-12T00:00:00+00:00">
+    <meta property="article:modified_time" content="2025-09-12T00:00:00+00:00">
+    <meta property="article:tag" content="Penetration Testing">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Automating SQL Server Linked-Server Password Recovery with PowerShell">
+  <meta name="twitter:description" content="A PowerShell toolkit that automates enabling TCP/IP, adding -T7806, enabling the DAC, and decrypting SQL Server linked-server passwords - for legal, authorized use only.">
+
+        <link href="http://localhost:1313/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="http://localhost:1313/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="http://localhost:1313/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="http://localhost:1313/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="/">Home</a>
+		
+		<a href="/posts">All posts</a>
+		
+		<a href="/about">About</a>
+		
+		<a href="/tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="http://localhost:1313/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">Automating SQL Server Linked-Server Password Recovery with PowerShell</h1>
+          <div class="meta">Posted on Sep 12, 2025</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          This PowerShell script automates the process of enabling TCP/IP, adding the -T7806 startup flag, and configuring the Dedicated Administrator Connection to allow automated decryption of SQL Server linked-server passwords. It&#39;s designed to save time in environments where a GUI isn&#39;t available, such as during red team operations, CTFs, or authorized penetration tests - and should only be used for legal, approved purposes. The console output looks like crap because I&#39;m no Picasso and, well… I got a little lazy.
+        </div>
+        <section class="body">
+          <h1 id="sql-server-linked-server-passwords">SQL Server Linked Server Passwords</h1>
+
+<div class='callout callout-warning' style=''>
+  <div class="callout-inner">
+    
+      ⚠️ <strong>Disclaimer: Legal Use Only</strong><br /><br />
+      <p>This script is provided solely for legal purposes. Any use of this script for illegal activities or in violation of applicable laws is strictly prohibited.</p>
+<p>I take no responsibility if:</p>
+<ul>
+<li>You use this script for unlawful purposes.</li>
+<li>You encounter any legal consequences as a result of using this script inappropriately.</li>
+</ul>
+
+    
+  </div>
+</div>
+
+<h1 id="this-whole-script-can-be-broken-down-into-4-steps">This whole script can be broken down into 4 steps.</h1>
+<ol>
+<li>The first step is enabling TCP/IP connections on all SQL Server Instances.</li>
+<li>The second step is to add a Start Up parameter, in this case, a trace flag will be added, which is -T7806. This flag is needed since we need to enable the Dedicated Administrator connection feature.</li>
+<li>The third step is to enable remote admin connection. In order to use the Dedicated Administrator connection login, we need to enable it in SQL Server.</li>
+<li>Finally, after all the configurations are enabled, the final step is to decrypt the passwords on the Linked Servers.</li>
+</ol>
+<p>In the folder <code>ConfigurationScripts</code> there are the 3 main scripts for the configuration. They are seperated for each step.</p>
+<p>The full script, which includes the configurations + the gathering and decryption of passwords are on the root of the repository, which is <code>ConfigDecryptLinkedServers.ps1</code></p>
+<p>In case you want to download the final part that is used on the full script, you can do it <a href="https://www.richardswinbank.net/admin/extract_linked_server_passwords">here</a>.</p>
+<h1 id="but-why-do-i-need-this-script">But why do I need this script?</h1>
+<p>Gaining access to Linked Servers passwords is a perfect way to acquire a greater foothold on the target.
+To perform all these configurations you need administration access to the machine, and on top of that, a Graphical User Interface, and that&rsquo;s the motivation to create this script.
+Having a script that manages all the configurations without a GUI is crucial because sometimes we are only left with a shell and a dream.</p>
+<p>With this, it will be way easier to set up everything, even if you have a GUI, it&rsquo;s just way quicker, and normally whether you are on an exam, a CTF, or a real engagement, time is of the essence.</p>
+<h2 id="first-part-of-the-script">First part of the script</h2>
+<p>To start off, as mentioned before, we need to enable TCP/IP connections.
+You can do it on a specific instance, but I made the script so it could cover ALL the instances.</p>
+<h3 id="in-a-gui-you-would-see-something-like-this">In a GUI, you would see something like this</h3>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/blob/main/img/2.png?raw=true" alt="EnablingTCP">
+    
+  </div>
+</div>
+
+<p>This PowerShell script is designed to perform the following actions for a list of SQL Server instances specified in the <code>$SqlInstances</code> array:</p>
+<ol>
+<li>
+<p>For each SQL Server instance in the array, it creates a new instance of the <code>Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer</code> class, associated with the local machine (<code>localhost</code>).</p>
+</li>
+<li>
+<p>It retrieves the TCP protocol settings for the current SQL Server instance specified by <code>$InstanceName</code> using the <code>ServerProtocols</code> property of the <code>ManagedComputer</code> object.</p>
+</li>
+<li>
+<p>It sets the <code>IsEnabled</code> property of the TCP protocol to <code>$true</code>, effectively enabling the TCP/IP protocol for the SQL Server instance.</p>
+</li>
+<li>
+<p>It retrieves a list of Windows services using <code>Get-Service</code>.</p>
+</li>
+<li>
+<p>The script filters the list of services to find services with display names matching the pattern <code>'SQL Server (*'</code>, typically used for identifying SQL Server services.</p>
+</li>
+<li>
+<p>Further filtering is applied to find the specific service associated with the current SQL Server instance (<code>$InstanceName</code>) by matching the display name.</p>
+</li>
+<li>
+<p>The SQL Server service associated with the current instance is then forcibly restarted using the <code>Restart-Service</code> cmdlet with the <code>-Force</code> parameter.</p>
+</li>
+</ol>
+<p>There are also validations in place to check either the TCP/IP is already enabled or not.</p>
+<h3 id="the-output-should-be-something-like-this">The output should be something like this</h3>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/raw/main/img/tcp.gif" alt="FinalScriptOutput">
+    
+  </div>
+</div>
+
+<h2 id="second-part-of-the-script">Second part of the script</h2>
+<p>After TCP/IP connections are enabled, it&rsquo;s time to the Start Up parameter. In this case it will be -T7806, as mentioned above, we will need to enable the Dedicated Administrator connection feature.
+In a GUI perspective, you would see something like this, where the flag isn&rsquo;t added, and you need to manually type it and insert it:</p>
+<p><img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/blob/main/img/1.png?raw=true" alt="AddingStartUpFlag"></p>
+<ol>
+<li>
+<p>Set the <code>$hklmRootNode</code> variable to the Registry path <code>&quot;HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server&quot;</code>, which typically stores SQL Server configuration in the Windows Registry.</p>
+</li>
+<li>
+<p>Retrieve properties of the Registry key <code>&quot;HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL&quot;</code>, containing information about SQL Server instances.</p>
+</li>
+<li>
+<p>Filter properties of this Registry key to select instances whose values match the pattern <code>'MSSQL*'</code>, identifying SQL Server instances.</p>
+</li>
+<li>
+<p>Iterate through selected instances, performing the following actions for each:</p>
+<ol>
+<li>
+<p>Extract instance name into the <code>$inst</code> variable.</p>
+</li>
+<li>
+<p>Construct Registry key path for instance&rsquo;s SQL Server parameters (usually <code>&quot;HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$inst\MSSQLServer\Parameters&quot;</code>).</p>
+</li>
+<li>
+<p>Retrieve properties of this Registry key, including SQL Server startup parameters.</p>
+</li>
+<li>
+<p>Filter these properties to select those with names matching the pattern <code>'SQLArg*'</code>, representing SQL Server startup parameters.</p>
+</li>
+<li>
+<p>Check if specified <code>$StartupParameter</code> exists among selected startup parameters for the current instance, setting <code>$hasFlag</code> to <code>false</code> if not.</p>
+</li>
+<li>
+<p>If <code>$StartupParameter</code> is not found among existing parameters for the current instance, add it to the Registry by creating a new property with a name like <code>&quot;SQLArgX&quot;</code> (incrementing <code>X</code> based on existing parameter count) and set its value to <code>$StartupParameter</code>.</p>
+</li>
+<li>
+<p>If <code>$StartupParameter</code> already exists among existing startup parameters for the current instance, log a message indicating that the parameter is already set.</p>
+</li>
+</ol>
+</li>
+</ol>
+<h3 id="the-output-should-be-something-like-this-1">The output should be something like this</h3>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/blob/main/img/param.gif?raw=true" alt="Alt text">
+    
+  </div>
+</div>
+
+<h2 id="third-part-of-the-script">Third part of the script</h2>
+<p>As for the final part of the configuration setup, is time to enable Remote Admin Connections on SQL Server, which is disabled by default.
+You can see if your Remote Admin Connection is enabled with the following SQL Script:</p>
+<p><code>SELECT name,value_in_use FROM sys.configurations WHERE name = 'remote admin connections';</code></p>
+<h3 id="if-the-remote-admin-connection-is-disabled-the-following-output-should-be-shown">If the Remote Admin Connection is disabled, the following output should be shown</h3>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/blob/main/img/3.png?raw=true" alt="AddingStartUpFlag">
+    
+  </div>
+</div>
+
+<h3 id="task-1-get-sql-server-instances">Task 1: Get SQL Server Instances</h3>
+<ul>
+<li>The script begins by retrieving the name of the computer using the <code>ENV:computername</code> environment variable.</li>
+<li>It then identifies the SQL Server instances installed on the computer by querying the Windows Registry under <code>HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server</code>. The list of instances is stored in the <code>$SqlInstances</code> variable.</li>
+</ul>
+<h3 id="task-2-enable-dac-dedicated-administrator-connection">Task 2: Enable DAC (Dedicated Administrator Connection)</h3>
+<ul>
+<li>For each SQL Server instance in <code>$SqlInstances</code>, it constructs a connection string for the instance.</li>
+<li>It opens a connection to the SQL Server using the constructed connection string.</li>
+<li>It executes a series of SQL queries to enable DAC by configuring advanced options and remote admin connections.</li>
+</ul>
+<h3 id="task-3-enable-sql-browser-service">Task 3: Enable SQL Browser Service</h3>
+<ul>
+<li>The script ensures that the SQL Server Browser service is enabled and started.</li>
+<li>It checks if the service exists using <code>Get-Service</code>.</li>
+<li>If the service exists but is not running, it sets the service to start automatically and starts it.</li>
+<li>It displays a message indicating whether the SQL Server Browser service was enabled and started.</li>
+</ul>
+<h3 id="the-output-should-be-something-like-this-2">The output should be something like this</h3>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/raw/main/img/enableRemoteConnection.gif" alt="Enable Remote Connection GIF">
+    
+  </div>
+</div>
+
+<h2 id="final-part">Final Part</h2>
+<p>With all these configurations made sucessfully, the final part is running the script that gets the SQL Server Linked Servers passwords.
+I won&rsquo;t be going into detail at all in this final part, since this is an already known script and has already some information on the internet.
+You can find the link for the script <a href="https://www.richardswinbank.net/admin/extract_linked_server_passwords">here</a>.</p>
+<p>For a final reference of documentation, you can find the configurations and much more about this attack in the following links:</p>
+<p><a href="https://www.netspi.com/blog/technical/adversary-simulation/decrypting-mssql-database-link-server-passwords/">Decrypting MSSQL Database Link Server Passwords</a></p>
+<p><a href="https://www.mssqltips.com/sqlservertip/5364/troubleshooting-the-sql-server-dedicated-administrator-connection/">Troubleshooting the SQL Server Dedicated Administrator Connection</a></p>
+<h2 id="the-full-script-should-give-you-the-following-output">The full script, should give you the following output</h2>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://github.com/IamLeandrooooo/SQLServerLinkedServersPasswords/raw/main/img/5.png" alt="FinalScriptOutput">
+    
+  </div>
+</div>
+
+
+        </section>
+        <div class="post-tags">
+          
+          
+          <nav class="nav tags">
+            <ul class="tags">
+              
+              <li><a href="/tags/penetration-testing">Penetration Testing</a></li>
+              
+            </ul>
+          </nav>
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2025  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+</div>
+    </body>
+</html>

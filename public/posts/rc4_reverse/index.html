@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html><head lang="en"><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>RC4 Reverse Engineering - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Reverse engineering RC4 in Windows malware using SystemFunction032 to extract keys and decrypt the payload." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="http://localhost:1313/posts/rc4_reverse/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="RC4 Reverse Engineering">
+  <meta property="og:description" content="Reverse engineering RC4 in Windows malware using SystemFunction032 to extract keys and decrypt the payload.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-09-13T00:00:00+00:00">
+    <meta property="article:modified_time" content="2025-09-13T00:00:00+00:00">
+    <meta property="article:tag" content="Reverse">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="RC4 Reverse Engineering">
+  <meta name="twitter:description" content="Reverse engineering RC4 in Windows malware using SystemFunction032 to extract keys and decrypt the payload.">
+
+        <link href="http://localhost:1313/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="http://localhost:1313/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="http://localhost:1313/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="http://localhost:1313/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="/">Home</a>
+		
+		<a href="/posts">All posts</a>
+		
+		<a href="/about">About</a>
+		
+		<a href="/tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="http://localhost:1313/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">RC4 Reverse Engineering</h1>
+          <div class="meta">Posted on Sep 13, 2025</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          This post shows how to reverse engineer RC4 in Windows malware via SystemFunction032, extract the key and encrypted data from memory, and decrypt the payload, revealing an MSFVenom signature.
+        </div>
+        <section class="body">
+          <h1 id="rc4-reverse-engineering">RC4 Reverse Engineering</h1>
+<h2 id="rc4-overview">RC4 Overview</h2>
+<p>RC4 is a lightweight stream cipher commonly used in malware for string decryption, binary unpacking, and encrypting network traffic.</p>
+<p>When analyzing a binary that uses RC4, there are a few key indicators and areas worth examining.</p>
+<p>No matter how much obfuscation is applied, typically if you find <strong>two loops responsible for initializing and scrambling a substitution box</strong>, it’s a strong sign that RC4 is being used.</p>
+<p>Furthermore, if the loops iterate approximately 256 times, it strongly suggests that RC4 is being used for encryption or decryption.</p>
+<h2 id="rc4-via-systemfunction032---reversing">RC4 via SystemFunction032 - Reversing</h2>
+<p><code>SystemFunction032</code> is an internal Windows API function, part of the Native API exposed via <code>Advapi32.dll</code>. This function can be leveraged for symmetric encryption and decryption operations using the RC4 stream cipher, as its implementation internally supports that functionality.</p>
+<p>In a binary analysis scenario where <code>SystemFunction032</code> was observed decrypting a payload, no explicit RC4 looping logic appeared within the analyzed code. Instead, the function was dynamically resolved at runtime using <code>LoadLibraryA</code> to load <code>Advapi32.dll</code>, and <code>GetProcAddress</code> to retrieve the address of <code>SystemFunction032</code>.</p>
+<p>The following image shows that happening:</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/main/img/rc4-rev/1.png" alt="RC4 Reverse Engineering">
+    
+  </div>
+</div>
+
+<h2 id="disassembly-breakdown">Disassembly Breakdown</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#a6e22e">push</span> <span style="color:#66d9ef">offset</span> <span style="color:#66d9ef">ProcName</span>          <span style="color:#75715e">; Push the address of the string &#34;SystemFunction032&#34; onto the stack
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">push</span> <span style="color:#66d9ef">offset</span> <span style="color:#66d9ef">LibFileName</span>       <span style="color:#75715e">; Push the address of the string &#34;Advapi32&#34; onto the stack
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">call</span> <span style="color:#66d9ef">ds</span>:<span style="color:#66d9ef">LoadLibraryA</span>          <span style="color:#75715e">; Call LoadLibraryA(&#34;Advapi32&#34;) — loads the DLL and returns a handle in EAX
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">push</span> <span style="color:#66d9ef">eax</span>                      <span style="color:#75715e">; Push the module handle (from LoadLibraryA) onto the stack
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">call</span> <span style="color:#66d9ef">ds</span>:<span style="color:#66d9ef">GetProcAddress</span>        <span style="color:#75715e">; Call GetProcAddress(hModule, &#34;SystemFunction032&#34;) — gets the function&#39;s address
+</span></span></span></code></pre></div><p>The final instruction calls <code>GetProcAddress</code>, which retrieves the address of the <code>SystemFunction032</code> function. This address is returned in the <code>EAX</code> register. Immediately after, the program moves this function pointer into a local stack variable (located at <code>[ebp+var_40]</code>), so it can be invoked later in the program:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#a6e22e">mov</span>     [<span style="color:#66d9ef">ebp</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">var_40</span>], <span style="color:#66d9ef">eax</span>
+</span></span></code></pre></div><h2 id="calling-systemfunction032">Calling SystemFunction032</h2>
+<p>At this stage, the program needs to retrieve both the encryption key and the encrypted data in order to decrypt the payload. To properly understand how the function call is set up in assembly, it&rsquo;s essential to know the signature of <code>SystemFunction032</code>.</p>
+<p>According to the ReactOS source documentation (<a href="https://doxygen.reactos.org/df/d13/sysfunc_8c.html#a66d55017b8625d505bd6c5707bdb9725">link</a>), the function has the following signature:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>NTSTATUS WINAPI <span style="color:#a6e22e">SystemFunction032</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> ustring<span style="color:#f92672">*</span> data,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> ustring<span style="color:#f92672">*</span> key
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><p>This means the function expects:</p>
+<ul>
+<li>A pointer to a ustring struct representing the data to be decrypted.</li>
+<li>A pointer to a ustring struct representing the decryption key.</li>
+</ul>
+<p>Both the <strong>data</strong> and <strong>key</strong> parameters passed to <code>SystemFunction032</code> are constructed using the following <code>ustring</code> structure:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> ustring {
+</span></span><span style="display:flex;"><span>	DWORD Length;
+</span></span><span style="display:flex;"><span>	DWORD MaximumLength;
+</span></span><span style="display:flex;"><span>	PUCHAR Buffer;
+</span></span><span style="display:flex;"><span>} _data, key;
+</span></span></code></pre></div><h3 id="how-the-assembly-code-prepares-the-arguments">How the Assembly Code Prepares the Arguments</h3>
+<p>In the assembly code, the program prepares the arguments by loading their addresses into registers and pushing them onto the stack in the correct order:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#a6e22e">lea</span>     <span style="color:#66d9ef">eax</span>, [<span style="color:#66d9ef">ebp</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">var_20</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">push</span>    <span style="color:#66d9ef">eax</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">lea</span>     <span style="color:#66d9ef">ecx</span>, [<span style="color:#66d9ef">ebp</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">var_34</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">push</span>    <span style="color:#66d9ef">ecx</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">call</span>    [<span style="color:#66d9ef">ebp</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">var_40</span>]
+</span></span></code></pre></div><p>This can be observed in the image below:</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/main/img/rc4-rev/asd.png" alt="RC4 Reverse Engineering">
+    
+  </div>
+</div>
+
+<h3 id="explanation">Explanation:</h3>
+<p><code>lea eax, [ebp+var_20]</code></p>
+<ul>
+<li>Loads the address of <code>[ebp+var_20]</code> into <code>EAX</code>. This variable will hold the key to be used for decryption.</li>
+</ul>
+<p><code>push eax</code></p>
+<ul>
+<li>Pushes the key address onto the stack as the second argument.</li>
+</ul>
+<p><code>lea ecx, [ebp+var_34]</code></p>
+<ul>
+<li>Loads the address of <code>[ebp+var_34]</code> into <code>ECX</code>. This variable holds the encrypted data that needs to be decrypted.</li>
+</ul>
+<p><code>push ecx</code></p>
+<ul>
+<li>Pushes the data address onto the stack as the first argument.</li>
+</ul>
+<p><code>call [ebp+var_40]</code></p>
+<ul>
+<li>Calls the function pointer stored at <code>[ebp+var_40]</code>, which was previously loaded with the address of <code>SystemFunction032</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> On x86 calling conventions, the last parameter is pushed first.</p>
+</blockquote>
+<h2 id="extracting-the-key-and-the-encrypted-data">Extracting the Key and the Encrypted data</h2>
+<p>Now that we understand how <code>SystemFunction032</code> works and how the assembly code prepares its parameters, we can proceed to extract the decryption key and the encrypted data from memory.</p>
+<p>At the instruction:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#a6e22e">lea</span> <span style="color:#66d9ef">eax</span>, [<span style="color:#66d9ef">ebp</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">var_20</span>]
+</span></span></code></pre></div><p>You can inspect the value of the <code>EAX</code> register by hovering over it to view the contents at that memory location. The data at this address follows the expected layout of the ustring structure for the key parameter.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/e233892435b172a33ea469093fde47fd61261119/img/rc4-rev/2.png" alt="RC4 Step 2">
+    
+  </div>
+</div>
+
+<p>This data has <code>0x00000010</code> for the Length, and MaximumLength, which makes sense, since <code>0x00000010</code> in decimal is 256, which respects the Length, and MaximumLength for RC4.</p>
+<p>By inspecting the value stored in the register at this point, we can also see the rest of the <code>ustring</code> structure. Most importantly, we’re interested in the <code>Buffer</code> field, which holds a pointer to the actual key data in memory.
+This pointer allows us to navigate directly to the location where the key bytes are stored. From there, we can extract and analyze the decryption key used by <code>SystemFunction032</code>.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/662a52f358d63bc0aefeac3c924400732225f8c9/img/rc4-rev/3.png" alt="RC4 Step 3">
+    
+  </div>
+</div>
+
+<p>The key is stored at the memory address located at the <code>0x002CA000</code> offset. With this information, we can directly navigate to that address in IDA by using the <code>G</code> command and entering the specified offset.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/662a52f358d63bc0aefeac3c924400732225f8c9/img/rc4-rev/4.png" alt="RC4 Step 4">
+    
+  </div>
+</div>
+
+<p>The key can be seen stored in the mentioned address.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/662a52f358d63bc0aefeac3c924400732225f8c9/img/rc4-rev/5.png" alt="RC4 Step 5">
+    
+  </div>
+</div>
+
+<p>At the instruction:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#a6e22e">lea</span> <span style="color:#66d9ef">ecx</span>, [<span style="color:#66d9ef">ebp</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">var_34</span>]
+</span></span></code></pre></div><p>You can inspect the value of the <code>ECX</code> register by hovering over it to view the contents at that memory location. Like the key, the data at this address follows the expected layout of the ustring structure for the data parameter.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/768d2e2f5df2f7a38ea73d229b3da602e6ebb2e2/img/rc4-rev/6.png" alt="RC4 Step 6">
+    
+  </div>
+</div>
+
+<p>The data is stored at the memory address located at the <code>0x002CA010</code> offset.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/768d2e2f5df2f7a38ea73d229b3da602e6ebb2e2/img/rc4-rev/7.png" alt="RC4 Step 7">
+    
+  </div>
+</div>
+
+<p>Again, by using the <code>G</code> command and entering the specified offset, we navigate to the specific location where the data is.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/768d2e2f5df2f7a38ea73d229b3da602e6ebb2e2/img/rc4-rev/8.png" alt="RC4 Step 8">
+    
+  </div>
+</div>
+
+<p>With the key and extracted data, we can now decrypt it. The decrypted output reveals a signature that matches the patterns of an MSFVenom payload.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="https://raw.githubusercontent.com/IamLeandrooooo/reveng-and-malware-notes/768d2e2f5df2f7a38ea73d229b3da602e6ebb2e2/img/rc4-rev/9.png" alt="RC4 Step 9">
+    
+  </div>
+</div>
+
+
+        </section>
+        <div class="post-tags">
+          
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2025  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+</div>
+    </body>
+</html>

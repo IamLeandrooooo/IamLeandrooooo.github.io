@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Reverse on Leandro&#39;s Code Cave</title>
+    <link>http://localhost:1313/tags/reverse/</link>
+    <description>Recent content in Reverse on Leandro&#39;s Code Cave</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 03 Oct 2025 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/reverse/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>SANDY - Malware Reverse Challenge</title>
+      <link>http://localhost:1313/posts/sandy/</link>
+      <pubDate>Fri, 03 Oct 2025 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/posts/sandy/</guid>
+      <description>Challenge Description Author: John Hammond&#xA;My friend Sandy is really into cryptocurrencies! She&amp;rsquo;s been trying to get me into it too, so she showed me a lot of Chrome extensions I could add to manage my wallets. Once I got everything sent up, she gave me this cool program!&#xA;She says it adds better protection so my wallets can&amp;rsquo;t get messed with by hackers.&#xA;Sandy wouldn&amp;rsquo;t lie to me, would she&amp;hellip;?</description>
+    </item>
+    <item>
+      <title>RC4 Reverse Engineering</title>
+      <link>http://localhost:1313/posts/rc4_reverse/</link>
+      <pubDate>Sat, 13 Sep 2025 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/posts/rc4_reverse/</guid>
+      <description>RC4 Reverse Engineering RC4 Overview RC4 is a lightweight stream cipher commonly used in malware for string decryption, binary unpacking, and encrypting network traffic.&#xA;When analyzing a binary that uses RC4, there are a few key indicators and areas worth examining.&#xA;No matter how much obfuscation is applied, typically if you find two loops responsible for initializing and scrambling a substitution box, it’s a strong sign that RC4 is being used.</description>
+    </item>
+  </channel>
+</rss>
