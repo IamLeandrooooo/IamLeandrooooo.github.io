@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html><head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Refuting a condrv Kernel Read - Chasing a COMPLETE_IO memmove Through the Console IPC and a Self-Verifying PoC, Only to Lose to One Decompiler-Hidden ProbeForRead on Windows 11 24H2 - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="A deep reverse-engineering write-up of the most promising false positive of a Windows 11 24H2 kernel-driver research - a seemingly unprivileged arbitrary-kernel-address read in condrv.sys where a console server names a raw SourcePtr that the driver memmoves into a client&#39;s MDL-mapped output buffer via IOCTL_CONDRV_COMPLETE_IO - that survived a triage pass, a five-item adversarial kill-list, and full protocol extraction, produced a self-verifying dual-role PoC whose control case passed cleanly, and then collapsed the instant a kernel VA was named, killed by an inlined ProbeForRead the Hex-Rays decompiler folded to nothing." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="https://iamleandrooooo.github.io/posts/the-arbitrary-kernel-read-that-wasnt/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="Refuting a condrv Kernel Read - Chasing a COMPLETE_IO memmove Through the Console IPC and a Self-Verifying PoC, Only to Lose to One Decompiler-Hidden ProbeForRead on Windows 11 24H2">
+  <meta property="og:description" content="A deep reverse-engineering write-up of the most promising false positive of a Windows 11 24H2 kernel-driver research - a seemingly unprivileged arbitrary-kernel-address read in condrv.sys where a console server names a raw SourcePtr that the driver memmoves into a client&#39;s MDL-mapped output buffer via IOCTL_CONDRV_COMPLETE_IO - that survived a triage pass, a five-item adversarial kill-list, and full protocol extraction, produced a self-verifying dual-role PoC whose control case passed cleanly, and then collapsed the instant a kernel VA was named, killed by an inlined ProbeForRead the Hex-Rays decompiler folded to nothing.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-07-10T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-10T00:00:00+00:00">
+    <meta property="article:tag" content="Windows">
+    <meta property="article:tag" content="Kernel">
+    <meta property="article:tag" content="Reversing">
+    <meta property="article:tag" content="Ghidra">
+    <meta property="article:tag" content="Windbg">
+    <meta property="article:tag" content="Condrv">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Refuting a condrv Kernel Read - Chasing a COMPLETE_IO memmove Through the Console IPC and a Self-Verifying PoC, Only to Lose to One Decompiler-Hidden ProbeForRead on Windows 11 24H2">
+  <meta name="twitter:description" content="A deep reverse-engineering write-up of the most promising false positive of a Windows 11 24H2 kernel-driver research - a seemingly unprivileged arbitrary-kernel-address read in condrv.sys where a console server names a raw SourcePtr that the driver memmoves into a client&#39;s MDL-mapped output buffer via IOCTL_CONDRV_COMPLETE_IO - that survived a triage pass, a five-item adversarial kill-list, and full protocol extraction, produced a self-verifying dual-role PoC whose control case passed cleanly, and then collapsed the instant a kernel VA was named, killed by an inlined ProbeForRead the Hex-Rays decompiler folded to nothing.">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="../../">Home</a>
+		
+		<a href="../../posts">All posts</a>
+		
+		<a href="../../about">About</a>
+		
+		<a href="../../tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">Refuting a condrv Kernel Read - Chasing a COMPLETE_IO memmove Through the Console IPC and a Self-Verifying PoC, Only to Lose to One Decompiler-Hidden ProbeForRead on Windows 11 24H2</h1>
+          <div class="meta">Posted on Jul 10, 2026</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          This write-up reverse-engineers condrv.sys on Windows 11 24H2 (build 26100) and walks a fully unprivileged arbitrary-kernel-read candidate from discovery to refutation. condrv brokers the console client/server IPC, and because conhost runs at the caller&#39;s own integrity a single process can drive both roles - a client parks an output buffer via IOCTL_CONDRV_ISSUE_USER_IO (0x500016), a server drains it with READ_IO (0x500006) and completes it with COMPLETE_IO (0x50000b), at which point the copy engine FUN_1c000cae0 memmoves Size bytes from a server-named SourcePtr straight into the client&#39;s MDL-mapped output buffer, with no ProbeForRead visible between the raw load at 0x1c000caff and the copy at 0x1c000cb78 and condrv importing no ProbeForRead at all. On paper that is an attacker-chosen kernel-VA read into an attacker buffer - KASLR defeat and pool disclosure - reachable with no admin and no privilege, and it survived three independent static passes. The refutation came from the executable - a self-verifying dual-role PoC leaking KUSER_SHARED_DATA (kernel VA 0xFFFFF78000000000 versus its user mirror 0x7FFE0000) passed its control run with a user pointer and returned STATUS_ACCESS_VIOLATION (Win32 998) the moment a kernel VA was named. The autopsy found an inlined ProbeForRead(SourcePtr) at 0x1c000c874 inside a handler Ghidra never promoted to a function (reached only through dispatch pointer 0x1c00065a0) - a CMP against MmUserProbeAddress (0x7FFFFFFF0000) plus a boundary touch that the decompiler elides because it has no modeled data-flow effect - so condrv is hardened, the bug was never real, and the takeaway is that a missing probe in the decompiler is worth nothing until an executable proves the deref actually reaches a kernel address.
+        </div>
+        <section class="body">
+          <h2 id="1-why-the-console-driver-is-an-attack-surface-at-all">1. Why the console driver is an attack surface at all</h2>
+<p><code>condrv.sys</code> is the Console Driver. Since the Windows 7-era console rewrite (and especially post-Windows 10, when the console host moved out of <code>csrss</code> into <code>conhost.exe</code>), <code>condrv</code> is the kernel broker sitting between a <strong>console client</strong> (your <code>cmd.exe</code>, your <code>powershell.exe</code> - anything with a console) and a <strong>console server</strong> (<code>conhost.exe</code>). Every <code>ReadConsole</code>, <code>WriteConsole</code>, and the whole console-handle machinery is marshalled through it.</p>
+<p>The important architectural fact for an attacker is this: <strong>the client/server split is not a privilege boundary.</strong> <code>conhost.exe</code> runs as the <em>same user</em> as the process it hosts. When you launch a console app with an ordinary <code>CreateProcess</code>, the OS spins up a <code>conhost</code> for it at your integrity level, no elevation involved. So if I can talk the driver&rsquo;s server-side protocol myself, I&rsquo;m not crossing a security boundary to do it - I&rsquo;m just doing what <code>conhost</code> already does, as me.</p>
+<p>That matters, because the entire value of a kernel bug is gated on <em>reachability</em>. A beautiful memory-corruption primitive behind an <code>Administrators</code>-only DACL or a <code>SeTcbPrivilege</code> check is worth nothing for local privilege escalation. <code>condrv</code>&rsquo;s server surface has <strong>no <code>SePrivilegeCheck</code>, no <code>SeAccessCheck</code>, no UIAccess gate</strong> anywhere on the dispatch path I care about - I confirmed the IAT slots for those routines have zero code cross-references reaching the handlers. That&rsquo;s what made this lead exciting before I&rsquo;d even understood the bug: whatever lived in there was reachable by a plain, non-elevated process.</p>
+<p>The device objects involved:</p>
+<ul>
+<li><code>\Device\ConDrv\Server</code> - the core server object.</li>
+<li><code>\Reference</code> - opened relative to the server.</li>
+<li><code>\Connect</code> - the client side, opened relative to the reference.</li>
+</ul>
+<p>A single process can open all three and drive <strong>both roles</strong> from two threads. That&rsquo;s the whole trick: I don&rsquo;t need to attack a <em>real</em> <code>conhost</code>; I <em>am</em> the <code>conhost</code>, and I&rsquo;m also the client I&rsquo;m serving.</p>
+<hr>
+<h2 id="2-the-ipc-protocol-issue--read--complete">2. The IPC protocol: ISSUE / READ / COMPLETE</h2>
+<p>The console IPC is a request/response queue built on three <code>METHOD_NEITHER</code> IOCTLs (the codes are what the client/server pair actually issue):</p>
+<table>
+<thead>
+<tr>
+<th>IOCTL</th>
+<th>Value</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IOCTL_CONDRV_ISSUE_USER_IO</code></td>
+<td><code>0x500016</code></td>
+<td><strong>Client</strong>: park a pending I/O request, hand the driver an output buffer to be filled later</td>
+</tr>
+<tr>
+<td><code>IOCTL_CONDRV_READ_IO</code></td>
+<td><code>0x500006</code></td>
+<td><strong>Server</strong>: drain the next pending message, learn its <code>RequestId</code></td>
+</tr>
+<tr>
+<td><code>IOCTL_CONDRV_COMPLETE_IO</code></td>
+<td><code>0x50000b</code></td>
+<td><strong>Server</strong>: complete a parked request - <em>this is the copy</em></td>
+</tr>
+</tbody>
+</table>
+<p>The flow, from the attacker&rsquo;s dual-role vantage point:</p>
+<ol>
+<li><strong>Client thread</strong> opens <code>\Connect</code> and issues <code>ISSUE_USER_IO</code> with an output descriptor pointing at a buffer I own (<code>pOut</code>). This call <strong>blocks</strong> inside the kernel - the request is now parked, waiting for a server to complete it.</li>
+<li><strong>Server thread</strong> issues <code>READ_IO</code> and drains the message, learning the <code>RequestId</code>/<code>SubId</code> that identify the parked client request.</li>
+<li><strong>Server thread</strong> issues <code>COMPLETE_IO</code> with a completion descriptor. The driver takes a <strong>source pointer</strong> out of that descriptor and <code>memmove</code>s <code>Size</code> bytes from it into the parked client&rsquo;s locked output buffer. The client&rsquo;s blocked <code>ISSUE_USER_IO</code> returns, and the client reads the bytes back out of <code>pOut</code>.</li>
+</ol>
+<p>The completion descriptor for <code>COMPLETE_IO</code> (<code>0x50000b</code>) is a 0x28-byte structure. Reconstructed field layout:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">typedef</span> <span style="color:#66d9ef">struct</span> {           <span style="color:#75715e">// IOCTL_CONDRV_COMPLETE_IO input, 0x28 bytes
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ULONG              RequestId;   <span style="color:#75715e">// +0x00
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ULONG              SubId;       <span style="color:#75715e">// +0x04
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ULONG              Status;      <span style="color:#75715e">// +0x08
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ULONG              _pad;        <span style="color:#75715e">// +0x0c
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> <span style="color:#66d9ef">long</span> Info;        <span style="color:#75715e">// +0x10
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span>              SourcePtr;   <span style="color:#75715e">// +0x18   &lt;-- the pointer that gets copied FROM
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ULONG              Size;        <span style="color:#75715e">// +0x20
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ULONG              Offset;      <span style="color:#75715e">// +0x24
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>} COMPLETE_0B;
+</span></span></code></pre></div><p>There is a sibling path, <code>0x500013</code>, that reaches the same copy engine with a leaner 0x18-byte descriptor (<code>SourcePtr</code> at <code>+0x08</code>). Keep that one in mind - it becomes important in the autopsy.</p>
+<hr>
+<h2 id="3-the-bug-as-i-read-it-in-ghidra">3. The bug, as I read it in Ghidra</h2>
+<p>Ghidra base for my <code>condrv.sys</code> load is <code>0x1c0000000</code>. The IOCTL dispatcher <code>FUN_1c000e860</code> routes server/console object requests through the object method <code>FUN_1c000c610</code> (type descriptor <code>0x1c0004290</code>), which switches on the control code. For <code>0x50000b</code> it lands in a completion handler that eventually calls the <strong>copy engine</strong>, <code>FUN_1c000cae0</code>.</p>
+<p>Here&rsquo;s the copy engine, trimmed to the load-bearing lines (RVAs relative to base):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-gdscript3" data-lang="gdscript3"><span style="display:flex;"><span>; FUN_1c000cae0  <span style="color:#f92672">-</span> the console COMPLETE_IO copy engine
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">1</span>c000caff   MOV   R14, [descriptor<span style="color:#f92672">+</span><span style="color:#ae81ff">0x00</span>]     ; R14 <span style="color:#f92672">=</span> SourcePtr, loaded RAW
+</span></span><span style="display:flex;"><span>   <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span>;   dst <span style="color:#f92672">=</span> client MDL kernel mapping:
+</span></span><span style="display:flex;"><span>;   request<span style="color:#f92672">+</span><span style="color:#ae81ff">0xb8</span> <span style="color:#f92672">-&gt;</span> <span style="color:#f92672">+</span><span style="color:#ae81ff">0x20</span> (MmMapLockedPagesSpecifyCache) <span style="color:#f92672">+</span> Offset
+</span></span><span style="display:flex;"><span>   <span style="color:#f92672">...</span>
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">1</span>c000cb78   CALL  FUN_1c0001540              ; memmove(dst, SourcePtr, Size)  <span style="color:#f92672">-</span> plain SSE, no SEH
+</span></span></code></pre></div><p><code>FUN_1c0001540</code> is a bog-standard SSE <code>memmove</code>. No <code>__try</code>, no fault handling of its own. The destination is the client&rsquo;s output buffer, mapped into the kernel via an MDL that <code>condrv</code> locked when the client parked the request (<code>request+0xb8 → +0x20</code>, an <code>MmMapLockedPagesSpecifyCache</code> result), offset by the attacker-supplied <code>Offset</code>.</p>
+<p>Now look at what&rsquo;s <em>missing</em> between <code>0x1c000caff</code> (load <code>SourcePtr</code>) and <code>0x1c000cb78</code> (copy from it): <strong>nothing</strong>. No <code>ProbeForRead</code>. No comparison against <code>MmUserProbeAddress</code>. No sign check. In fact <code>condrv.sys</code> <strong>imports no <code>ProbeForRead</code> at all</strong> - I checked the import table. The one place <code>MmUserProbeAddress</code> shows up on the sibling handler <code>FUN_1c000cbf0</code> (the <code>0x500013</code> path) is at <code>0x1c000cc19</code>, and when you read what it&rsquo;s bounding, it&rsquo;s checking the <strong>descriptor buffer range</strong> <code>[R8, R8+0x18)</code> - i.e., &ldquo;is the 0x18-byte descriptor itself in user space&rdquo; - <em>not</em> the <code>SourcePtr</code> value living inside that descriptor.</p>
+<p>So the model I built was:</p>
+<blockquote>
+<p>The server hands the driver a raw <code>SourcePtr</code>. The driver validates that the <em>descriptor</em> is a user buffer, then blindly <code>memmove</code>s <code>Size</code> bytes <strong>from <code>SourcePtr</code></strong> into the client buffer. <code>SourcePtr</code> is never itself constrained to user space. A server that names a <strong>kernel</strong> virtual address makes <code>condrv</code> read kernel memory into the client buffer - and the client reads it straight back.</p>
+</blockquote>
+<p>That is an <strong>arbitrary kernel-address read</strong>. Attacker picks the VA, attacker picks the length, kernel bytes land in an attacker buffer. It defeats KASLR outright, dumps pool and <code>ntoskrnl</code> and whatever else you can point at, and it composes as the read half of an exploit chain. And it&rsquo;s reachable, as established, by a normal non-admin process. For a local-privilege-escalation researcher this is close to a dream find - an info-leak primitive with no privilege prerequisite.</p>
+<hr>
+<h2 id="4-the-verification-i-did-before-writing-code">4. The verification I did <em>before</em> writing code</h2>
+<p>I have a hard rule from getting burned before: three independent looks before anything gets a &ldquo;confirmed&rdquo; label. This finding got all three:</p>
+<p><strong>Pass 1 - triage.</strong> Found the copy engine, mapped <code>SourcePtr → memmove</code>, noted the absent probe, confirmed reachability (no privilege gate on the dispatch path).</p>
+<p><strong>Pass 2 - adversarial kill-list.</strong> I wrote down every way the bug <em>could</em> be false and tried to prove each one true:</p>
+<ol>
+<li><em>Is <code>SourcePtr</code> secretly validated?</em> - No probe visible in the copy engine, no <code>ProbeForRead</code> import. ✗ (couldn&rsquo;t kill it)</li>
+<li><em>Is the descriptor range check actually covering <code>SourcePtr</code>?</em> - No; it bounds <code>[R8, R8+0x18)</code>, the descriptor, not the pointer inside. ✗</li>
+<li><em>Is the destination the thing that&rsquo;s constrained, making <code>SourcePtr</code> irrelevant?</em> - Destination is the client MDL; source is independent. ✗</li>
+<li><em>Is there an SEH frame that would swallow a kernel-read fault into a benign error?</em> - The <code>memmove</code> has no SEH; I didn&rsquo;t find a wrapping <code>__try</code> on the copy engine. ✗</li>
+<li><em>Is the server role privileged after all?</em> - No <code>SeAccessCheck</code>/<code>SePrivilegeCheck</code> xrefs on the path. ✗</li>
+</ol>
+<p>Five kill attempts, five misses. By my own methodology, the bug <em>survived</em> an adversarial pass.</p>
+<p><strong>Pass 3 - protocol extraction.</strong> I reverse-engineered the exact wire protocol (the ISSUE/READ/COMPLETE sequence, the descriptor layouts, the connect handshake) so I could reproduce it from user mode.</p>
+<p>Three passes, all green. Everything I could see in the decompiler said this was real.</p>
+<hr>
+<h2 id="5-the-poc---and-the-discipline-of-making-it-self-verifying">5. The PoC - and the discipline of making it self-verifying</h2>
+<p>Here is the rule that ultimately saved me from filing garbage to MSRC: <strong>a finding is a hypothesis until an executable triggers it.</strong> Static confidence is not truth. So I built <code>condrv_leak.c</code> - a single-process, dual-role harness that speaks the protocol and is <strong>self-verifying</strong>: it leaks a kernel address whose value I already know, so I don&rsquo;t have to trust a debugger to grade it.</p>
+<p>The perfect oracle for that is <code>KUSER_SHARED_DATA</code>. It lives at a fixed kernel VA <code>0xFFFFF78000000000</code> <strong>and</strong> is mirrored read-only into every process at user VA <code>0x7FFE0000</code>. If my &ldquo;arbitrary kernel read&rdquo; is real, then reading the kernel VA through the bug should return bytes <strong>identical</strong> to what I can read directly at <code>0x7FFE0000</code>. Match + nonzero = proof, no <code>kd</code> required.</p>
+<p>The harness (abridged):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#define IOCTL_REQUEST  0x500016   </span><span style="color:#75715e">/* client: park a pending read w/ an output buffer */</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define IOCTL_READ     0x500006   </span><span style="color:#75715e">/* server: drain a message */</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define IOCTL_COMPLETE 0x50000b   </span><span style="color:#75715e">/* server: complete a request -&gt; the copy */</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/* client thread: park an output buffer and block until the server completes it */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> DWORD WINAPI <span style="color:#a6e22e">client_thread</span>(<span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> p){
+</span></span><span style="display:flex;"><span>    HANDLE hClient <span style="color:#f92672">=</span> <span style="color:#a6e22e">openCondrv</span>(<span style="color:#e6db74">L</span><span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Connect&#34;</span>, g_hRef);
+</span></span><span style="display:flex;"><span>    REQ_MSG msg <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>    msg.OutCount <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    msg.Desc[<span style="color:#ae81ff">0</span>].Size   <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x100</span>;
+</span></span><span style="display:flex;"><span>    msg.Desc[<span style="color:#ae81ff">0</span>].Buffer <span style="color:#f92672">=</span> g_pOut;              <span style="color:#75715e">/* driver fills THIS from SourcePtr */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">DeviceIoControl</span>(hClient, IOCTL_REQUEST, <span style="color:#f92672">&amp;</span>msg, <span style="color:#66d9ef">sizeof</span>(msg), NULL, <span style="color:#ae81ff">0</span>, <span style="color:#f92672">&amp;</span>br, NULL);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* returns once the leak-completion lands: kernel bytes are now in g_pOut */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">int</span> argc, <span style="color:#66d9ef">char</span><span style="color:#f92672">**</span> argv){
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> g_ctrl <span style="color:#f92672">=</span> <span style="color:#a6e22e">VirtualAlloc</span>(...); <span style="color:#a6e22e">memset</span>(g_ctrl, <span style="color:#ae81ff">0xAB</span>, <span style="color:#ae81ff">0x1000</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> <span style="color:#66d9ef">long</span> target <span style="color:#f92672">=</span> (<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> <span style="color:#66d9ef">long</span>)g_ctrl;   <span style="color:#75715e">/* default: USER control buffer */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (argc <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">1</span>) target <span style="color:#f92672">=</span> <span style="color:#a6e22e">strtoull</span>(argv[<span style="color:#ae81ff">1</span>], NULL, <span style="color:#ae81ff">0</span>);        <span style="color:#75715e">/* arg: a kernel VA to leak    */</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* open \Device\ConDrv\Server, \Reference, spawn the client thread ... */</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* server side: drain + complete the CONNECT, then drain the client&#39;s REQUEST ... */</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    COMPLETE_0B c <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
+</span></span><span style="display:flex;"><span>    c.RequestId <span style="color:#f92672">=</span> h<span style="color:#f92672">-&gt;</span>RequestId; c.SubId <span style="color:#f92672">=</span> h<span style="color:#f92672">-&gt;</span>SubId;
+</span></span><span style="display:flex;"><span>    c.Info <span style="color:#f92672">=</span> N; c.Size <span style="color:#f92672">=</span> N; c.Offset <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    c.SourcePtr <span style="color:#f92672">=</span> (<span style="color:#66d9ef">void</span><span style="color:#f92672">*</span>)target;              <span style="color:#75715e">/* &lt;-- the pointer under test */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">DeviceIoControl</span>(hServer, IOCTL_COMPLETE, <span style="color:#f92672">&amp;</span>c, <span style="color:#66d9ef">sizeof</span>(c), NULL, <span style="color:#ae81ff">0</span>, <span style="color:#f92672">&amp;</span>br, NULL);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* then: dump g_pOut; if target==kernel VA, compare against 0x7FFE0000 */</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Two modes:</p>
+<ul>
+<li><strong>Control mode</strong> (no argument): <code>SourcePtr</code> points at a user buffer I&rsquo;ve filled with <code>0xAB</code>. This exercises the <em>entire</em> machinery - the connect handshake, the parked request, the completion, the <code>memmove</code>, the client read-back - with a source I know is legal. If the control passes, the protocol and the copy path are proven correct, and the <em>only</em> remaining variable is whether a kernel <code>SourcePtr</code> is accepted.</li>
+<li><strong>Leak mode</strong> (<code>condrv_leak.exe 0xFFFFF78000000000</code>): the real test.</li>
+</ul>
+<p>That control/leak split is deliberate. It isolates the one question that actually decides the finding: <strong>does the driver care what <code>SourcePtr</code> points at?</strong></p>
+<hr>
+<h2 id="6-the-run">6. The run</h2>
+<p>Control mode first:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>[i] SourcePtr = 0x000001d4c2a30000 (USER control buffer, expect 0xAB back)
+</span></span><span style="display:flex;"><span>[B] \Server core open
+</span></span><span style="display:flex;"><span>[B] \Reference open
+</span></span><span style="display:flex;"><span>[A] client connected
+</span></span><span style="display:flex;"><span>[B] drained connect msg ...
+</span></span><span style="display:flex;"><span>[B] connect completed -&gt; client is live
+</span></span><span style="display:flex;"><span>[B] drained request msg ...
+</span></span><span style="display:flex;"><span>[B] COMPLETE_IO LEAK: SourcePtr=0x000001d4c2a30000 Size=0x100 -&gt; client buffer
+</span></span><span style="display:flex;"><span>[A] REQUEST_IO completed ok=1 (kernel bytes now in pOut)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[*] bytes read from 0x000001d4c2a30000 (first 0x40):
+</span></span><span style="display:flex;"><span>ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab
+</span></span><span style="display:flex;"><span>ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab ab
+</span></span><span style="display:flex;"><span>...
+</span></span><span style="display:flex;"><span>[*] CONTROL (user source, pattern 0xAB): PASSED -&gt; copy path + protocol WORK
+</span></span><span style="display:flex;"><span>    -&gt; now test a kernel VA:   condrv_leak.exe 0xFFFFF78000000000
+</span></span></code></pre></div><p>Perfect. The <code>0xAB</code> pattern round-tripped through the console IPC. The handshake, the parked I/O, the completion, the <code>memmove</code>, the client read-back - all correct. Every moving part except the source-pointer question was now proven.</p>
+<p>Then leak mode:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>[i] SourcePtr = 0xfffff78000000000 (user-supplied)
+</span></span><span style="display:flex;"><span>[B] \Server core open
+</span></span><span style="display:flex;"><span>[B] \Reference open
+</span></span><span style="display:flex;"><span>[A] client connected
+</span></span><span style="display:flex;"><span>[B] connect completed -&gt; client is live
+</span></span><span style="display:flex;"><span>[B] drained request msg ...
+</span></span><span style="display:flex;"><span>[B] COMPLETE_IO LEAK: SourcePtr=0xfffff78000000000 Size=0x100 -&gt; client buffer
+</span></span><span style="display:flex;"><span>[!] COMPLETE leak err=998
+</span></span></code></pre></div><p><code>err=998</code>. <code>ERROR_NOACCESS</code>. The kernel-mode <code>STATUS_ACCESS_VIOLATION</code> bubbling back through the I/O manager.</p>
+<p>The control run and the leak run were <strong>byte-for-byte identical</strong> except for one field: <code>SourcePtr</code>. User pointer → the copy happens. Kernel pointer → <code>STATUS_ACCESS_VIOLATION</code> <em>before any bytes move</em>. There is only one explanation for that: <strong><code>SourcePtr</code> is validated as a user-mode address</strong>, and my &ldquo;arbitrary kernel read&rdquo; was never a thing.</p>
+<p>The bug was dead. My three green passes were three false positives.</p>
+<hr>
+<h2 id="7-the-autopsy-the-instruction-the-decompiler-never-showed-me">7. The autopsy: the instruction the decompiler never showed me</h2>
+<p>A refutation isn&rsquo;t finished until you can point at the exact check you missed. So I went back - this time into the <strong>disassembly</strong>, not the decompiler - and looked at the <code>0x50000b</code> completion handler proper, <code>FUN_1c000c800</code>.</p>
+<p>There it was, an inlined <code>ProbeForRead</code> on <code>SourcePtr</code>, right before the completion path reaches the copy engine:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>; FUN_1c000c800 - IOCTL_CONDRV_COMPLETE_IO (0x50000b) handler
+</span></span><span style="display:flex;"><span>; R? = SourcePtr (from descriptor+0x18), length in another reg
+</span></span><span style="display:flex;"><span>1c000c874   LEA   R8, [SourcePtr + length]        ; end = base + len
+</span></span><span style="display:flex;"><span>1c000c87b   CMP   R8, [MmUserProbeAddress]        ; MmUserProbeAddress = 0x7FFFFFFF0000
+</span></span><span style="display:flex;"><span>1c000c882   JA    fault                           ; end &gt; user-max  -&gt; reject
+</span></span><span style="display:flex;"><span>1c000c884   CMP   R8, SourcePtr                    ; end &lt; base ?
+</span></span><span style="display:flex;"><span>1c000c887   JNC   ok                               ; no wrap -&gt; continue
+</span></span><span style="display:flex;"><span>1c000c88a   MOVZX EAX, byte ptr [MmUserProbeAddress]  ; boundary TOUCH -&gt; #PF on bad ptr
+</span></span></code></pre></div><p>This is the textbook inlined form of <code>ProbeForRead(SourcePtr, length, 1)</code>:</p>
+<blockquote>
+<p><code>end = SourcePtr + length; if (end &gt; 0x7FFFFFFF0000 || end &lt; SourcePtr) *(volatile char*)0x7FFFFFFF0000;</code></p>
+</blockquote>
+<p>A kernel VA like <code>0xFFFFF78000000000</code> makes <code>end &gt; 0x7FFFFFFF0000</code>, the <code>JA</code> is taken, and the boundary read at <code>[0x7FFFFFFF0000]</code> - a deliberately unmapped guard address - raises <code>STATUS_ACCESS_VIOLATION</code>. That fault is caught by the <code>__try</code> wrapping the dispatch, converted to a status, and returned to my <code>DeviceIoControl</code> as error <code>998</code>. Exactly the behavior I saw. And the sibling <code>0x500013</code> path carries the <strong>same</strong> probe at <code>0x1c000cc4a</code>.</p>
+<p>The copy engine <code>FUN_1c000cae0</code> genuinely has no probe - but it doesn&rsquo;t need one, because <strong><code>SourcePtr</code> is already validated by the handler before it&rsquo;s ever handed to the copy engine.</strong> The engine only ever sees pointers that survived the probe.</p>
+<h3 id="why-three-passes-missed-a-probe-sitting-in-plain-sight">Why three passes missed a probe sitting in plain sight</h3>
+<p>Two failures compounded, and they&rsquo;re worth internalizing:</p>
+<p><strong>(1) The handler wasn&rsquo;t a defined function in my Ghidra database.</strong> <code>FUN_1c000c800</code> was reached only through a dispatch-table pointer at <code>0x1c00065a0</code>. Ghidra&rsquo;s auto-analysis never promoted that address to a function, so <code>decompile</code>/<code>get_callees</code>/xref queries against it came back <strong>empty</strong>. With nothing to read there, all three passes leaned on the <em>sibling</em> code I <em>could</em> decompile - the copy engine <code>cae0</code> (which really has no probe) and the neighbouring handler <code>cbf0</code> (whose only visible <code>MmUserProbeAddress</code> use bounds the descriptor range). I audited the code around the bug instead of the code <em>with</em> the check, because the code with the check didn&rsquo;t exist as far as my tooling was concerned.</p>
+<p><strong>(2) The decompiler silently folds inlined probes.</strong> This is the deeper trap, and it&rsquo;s bitten me more than once during research. The inlined <code>ProbeForRead</code> sequence - <code>LEA end</code>, <code>CMP MmUserProbeAddress</code>, <code>JA</code>, conditional boundary-<code>MOVZX</code> - has <strong>no modeled data-flow effect</strong> on the values Hex-Rays is tracking. The <code>MOVZX</code> loads into a scratch register that&rsquo;s immediately discarded; the compare only influences a fault path. So the decompiler, quite reasonably from its own point of view, <strong>elides the whole thing</strong>. The pseudocode reads as a couple of innocent plain loads. A probe that is <em>unmissable</em> in three instructions of disassembly is <em>invisible</em> in the decompiler&rsquo;s C. If you audit pseudocode, you audit a lie of omission.</p>
+<p>I have started calling this the &ldquo;inlined-probe trap,&rdquo; and by the end of the research the executable rule had caught it <strong>seven</strong> separate times: a field looks unprobed in the decompiler, the instinct-to-verify fires, and the disassembly (or, as here, the PoC) shows a <code>CMP MmUserProbeAddress / JA / touch</code> that Hex-Rays swallowed. Every single time.</p>
+<hr>
+<h2 id="8-what-i-actually-learned">8. What I actually learned</h2>
+<p><strong>A &ldquo;missing probe&rdquo; in the decompiler is worth nothing.</strong> Not &ldquo;worth investigating&rdquo; - <em>nothing</em>, until you&rsquo;ve confirmed it in disassembly or with a running executable. The Hex-Rays output is a model, and the model deliberately drops exactly the security checks I&rsquo;m hunting for. Three independent analysts (well - three independent passes by me) reading that model all reached the same wrong conclusion, because they were all reading the same lie.</p>
+<p><strong>Undefined functions are blind spots, not empty space.</strong> When decompile/xref queries return empty for an address that&rsquo;s clearly reached (here, via a dispatch table), that is not &ldquo;nothing to see.&rdquo; It&rsquo;s &ldquo;your tooling refuses to look here.&rdquo; Force-define the function, or disassemble the bytes raw. The check I missed lived entirely inside a function my database pretended didn&rsquo;t exist.</p>
+<p><strong>Design the PoC so one variable decides the verdict.</strong> The control/leak split - same protocol, same everything, <em>only</em> the pointer changes - is what turned a vague &ldquo;it returned an error, maybe I set up the IOCTL wrong&rdquo; into &ldquo;the driver rejects kernel pointers specifically.&rdquo; A self-verifying oracle (<code>KUSER_SHARED_DATA</code> at a known kernel VA vs. its user mirror) meant I didn&rsquo;t need to trust a debugger to grade the run. The experiment was built to falsify the claim cleanly, and it did.</p>
+<p><strong>The executable is the only arbiter.</strong> This is the whole thing. Static analysis is how you <em>find</em> candidates; it is not how you <em>confirm</em> them. On a modern, hardened target like 24H2, the difference between &ldquo;the decompiler shows no probe&rdquo; and &ldquo;there is no probe&rdquo; is the difference between a real MSRC report and an embarrassing one. The running PoC is the line between the two, and it does not care how confident three passes of reading pseudocode made me.</p>
+<hr>
+<h2 id="9-closing">9. Closing</h2>
+<p>This was the most promising lead of that I had for a while, and it was wrong. That&rsquo;s not the exception in vulnerability research, it <em>is</em> the research. The satisfying version of this story, where the kernel bytes come back and KASLR falls over, is the one that gets written up. The actual day-to-day is this one: a great-looking primitive, a clean PoC, a control case that passes, and then a single instruction you never saw quietly deleting your finding. Most leads die. The ones that die on <em>your</em> PoC, in <em>your</em> lab, before they reach a vendor, are the ones you should be grateful for - because the alternative is that they die in the report, in public, with your name on them.</p>
+<p>The discipline that kills your own findings is the same discipline that lets you trust the ones that live. <code>condrv</code> is hardened. The probe was always there. I just couldn&rsquo;t see it until the executable made me look.</p>
+
+        </section>
+        <div class="post-tags">
+          
+          
+          <nav class="nav tags">
+            <ul class="tags">
+              
+              <li><a href="../../tags/windows">windows</a></li>
+              
+              <li><a href="../../tags/kernel">kernel</a></li>
+              
+              <li><a href="../../tags/reversing">reversing</a></li>
+              
+              <li><a href="../../tags/ghidra">ghidra</a></li>
+              
+              <li><a href="../../tags/windbg">windbg</a></li>
+              
+              <li><a href="../../tags/condrv">condrv</a></li>
+              
+              <li><a href="../../tags/console">console</a></li>
+              
+              <li><a href="../../tags/ipc">ipc</a></li>
+              
+              <li><a href="../../tags/ioctl">ioctl</a></li>
+              
+              <li><a href="../../tags/info-leak">info-leak</a></li>
+              
+              <li><a href="../../tags/memory-disclosure">memory-disclosure</a></li>
+              
+              <li><a href="../../tags/kaslr">kaslr</a></li>
+              
+              <li><a href="../../tags/probeforread">probeforread</a></li>
+              
+              <li><a href="../../tags/inlined-probe">inlined-probe</a></li>
+              
+              <li><a href="../../tags/false-positive">false-positive</a></li>
+              
+              <li><a href="../../tags/decompiler-artifact">decompiler-artifact</a></li>
+              
+              <li><a href="../../tags/poc">poc</a></li>
+              
+              <li><a href="../../tags/vulnerability-research">vulnerability-research</a></li>
+              
+              <li><a href="../../tags/msrc">msrc</a></li>
+              
+              <li><a href="../../tags/24h2">24h2</a></li>
+              
+            </ul>
+          </nav>
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2026  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+</div>
+    </body>
+</html>

@@ -1,0 +1,21 @@
+{{ $type := .Get "type" }}
+<div class='callout callout-{{ $type }}' style='{{ if eq $type "customimg" }}text-align:center; {{ .Get "style" | safeCSS }}{{ end }}'>
+  <div class="callout-inner">
+    {{ if eq $type "alert" }}
+      🚨 <u>Alert</u><br />
+      {{ .Inner | markdownify }}
+    {{ else if eq $type "custom" }}
+      {{ if .Get "emoji" }}{{ .Get "emoji" }} {{ end }}
+      {{ if .Get "title" }}<u>{{ .Get "title" }}</u><br />{{ end }}
+      {{ .Inner | markdownify }}
+    {{ else if eq $type "tip" }}
+      🔎 <u>Tip</u><br />
+      {{ .Inner | markdownify }}
+    {{ else if eq $type "warning" }}
+      ⚠️ <strong>{{ .Get "title" }}</strong><br /><br />
+      {{ .Inner | markdownify }}
+    {{ else }}
+      {{ .Inner | markdownify }}
+    {{ end }}
+  </div>
+</div>

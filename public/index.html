@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+	<head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Leandro&#39;s Code Cave | Home </title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="" />
+	<meta property="og:image" content=""/>
+	<link rel="alternate" type="application/rss+xml" href="https://iamleandrooooo.github.io/index.xml" title="Leandro's Code Cave" />
+	<meta property="og:url" content="https://iamleandrooooo.github.io/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="Leandro&#39;s Code Cave">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="website">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Leandro&#39;s Code Cave">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+
+	<body>
+		<div class="content">
+			<header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="./">Home</a>
+		
+		<a href="./posts">All posts</a>
+		
+		<a href="./about">About</a>
+		
+		<a href="./tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+			
+			<main class="list">
+				<div class="site-description"><p>Pentesting, Malware Development, Malware Analysis, and Reversing stuff.</p></div>
+				
+				
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/the-arbitrary-kernel-read-that-wasnt/">Refuting a condrv Kernel Read - Chasing a COMPLETE_IO memmove Through the Console IPC and a Self-Verifying PoC, Only to Lose to One Decompiler-Hidden ProbeForRead on Windows 11 24H2</a></h1>
+					<time>Jul 10, 2026</time>
+					<br><div class="description">
+	
+	A deep reverse-engineering write-up of the most promising false positive of a Windows 11 24H2 kernel-driver research - a seemingly unprivileged arbitrary-kernel-address read in condrv.sys where a console server names a raw SourcePtr that the driver memmoves into a client&#39;s MDL-mapped output buffer via IOCTL_CONDRV_COMPLETE_IO - that survived a triage pass, a five-item adversarial kill-list, and full protocol extraction, produced a self-verifying dual-role PoC whose control case passed cleanly, and then collapsed the instant a kernel VA was named, killed by an inlined ProbeForRead the Hex-Rays decompiler folded to nothing.
+	
+</div>
+					<a class="readmore" href="./posts/the-arbitrary-kernel-read-that-wasnt/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/the-broker-that-rechecks-access/">The Sandbox Broker That Couldn&#39;t Be Confused - Forging an AppContainer Token to Reach bfs.sys and Failing to Path-Confuse a File Broker That Re-Runs the Access Check in the Caller&#39;s Own Context on Windows 11 24H2</a></h1>
+					<time>Jul 8, 2026</time>
+					<br><div class="description">
+	
+	A reverse-engineering write-up of a refuted sandbox-escape candidate in bfs.sys the Brokering File System on Windows 11 24H2 build 26100 - the device opens for a normal token and its per-IOCTL capability gate is passable by forging an AppContainer lowbox token carrying bfs&#39;s capability SID via NtCreateLowBoxToken, but the path and rename brokering opens every target with OBJ_FORCE_ACCESS_CHECK in the caller&#39;s own non-impersonated context against an FLT-normalized canonical name, so the broker can only ever touch files the sandbox could already open itself, leaving no path confusion, no TOCTOU, no privilege amplification, and nothing to report.
+	
+</div>
+					<a class="readmore" href="./posts/the-broker-that-rechecks-access/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/fireflow_fullpwn/">FireFlow - Chaining Langflow RCE, JWT Abuse, and Kubernetes nodes/proxy to Root an HTB Box</a></h1>
+					<time>May 21, 2026</time>
+					<br><div class="description">
+	
+	A full pwn write-up of the HTB box &#34;FireFlow&#34;, chaining an unauthenticated Langflow RCE (CVE-2026-33017), credential looting from environment variables, a JWT &#39;none&#39; algorithm bypass on an internal MCP AI Tool Registry, malicious tool registration for in-cluster RCE, and Kubernetes nodes/proxy abuse via kubelet /exec to read the root flag from a privileged node-exporter pod.
+	
+</div>
+					<a class="readmore" href="./posts/fireflow_fullpwn/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/dudsat_reverse/">Dudsat - Reversing a Doppler-Disguised Permutation Cipher</a></h1>
+					<time>May 20, 2026</time>
+					<br><div class="description">
+	
+	Reverse engineering write-up for the HTB challenge &#34;rev_dudsat&#34; - recovering a flag hidden in the residuals of satellite telemetry by reconstructing a permutation table built at process startup.
+	
+</div>
+					<a class="readmore" href="./posts/dudsat_reverse/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/sysprobe_reverse/">Sysprobe - Five Layers of Onion, One DFT, One Flag</a></h1>
+					<time>May 20, 2026</time>
+					<br><div class="description">
+	
+	HTB reversing write-up. Outer ELF is a decoy; the real entry point lives in a hidden RWE segment with no section header, jumps into a DEFLATE-packed nested ELF, which mmap-XORs a 62-byte bytecode for a stack VM, which runs a tiny DFT magnitude check whose output bitmap, packed MSB-first, is the flag.
+	
+</div>
+					<a class="readmore" href="./posts/sysprobe_reverse/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/sandy/">SANDY - Malware Reverse Challenge</a></h1>
+					<time>Oct 3, 2025</time>
+					<br><div class="description">
+	
+	SANDY is a Huntress 2025 CTF reverse engineering challenge where you analyze a malicious binary, uncover its logic, and extract the hidden flag.
+	
+</div>
+					<a class="readmore" href="./posts/sandy/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/rc4_reverse/">RC4 Reverse Engineering</a></h1>
+					<time>Sep 13, 2025</time>
+					<br><div class="description">
+	
+	Reverse engineering RC4 in Windows malware using SystemFunction032 to extract keys and decrypt the payload.
+	
+</div>
+					<a class="readmore" href="./posts/rc4_reverse/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/verificationclarification/">Verification Clarification</a></h1>
+					<time>Sep 13, 2025</time>
+					<br><div class="description">
+	
+	NahamCon2025 CTF Malware Reversing Challenge
+	
+</div>
+					<a class="readmore" href="./posts/verificationclarification/">Read more ⟶</a>
+				</section>
+				
+				<section class="list-item">
+					<h1 class="title"><a href="./posts/sqlserverlinkedserverspasswords/">Automating SQL Server Linked-Server Password Recovery with PowerShell</a></h1>
+					<time>Sep 12, 2025</time>
+					<br><div class="description">
+	
+	A PowerShell toolkit that automates enabling TCP/IP, adding -T7806, enabling the DAC, and decrypting SQL Server linked-server passwords - for legal, authorized use only.
+	
+</div>
+					<a class="readmore" href="./posts/sqlserverlinkedserverspasswords/">Read more ⟶</a>
+				</section>
+				
+				
+
+
+			</main>
+			<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2026  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+
+		</div>
+		
+	</body>
+</html>

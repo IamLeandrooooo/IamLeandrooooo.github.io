@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Appcontainer on Leandro&#39;s Code Cave</title>
+    <link>https://iamleandrooooo.github.io/tags/appcontainer/</link>
+    <description>Recent content in Appcontainer on Leandro&#39;s Code Cave</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Wed, 08 Jul 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://iamleandrooooo.github.io/tags/appcontainer/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>The Sandbox Broker That Couldn&#39;t Be Confused - Forging an AppContainer Token to Reach bfs.sys and Failing to Path-Confuse a File Broker That Re-Runs the Access Check in the Caller&#39;s Own Context on Windows 11 24H2</title>
+      <link>https://iamleandrooooo.github.io/posts/the-broker-that-rechecks-access/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/posts/the-broker-that-rechecks-access/</guid>
+      <description>1. What a file broker is, and why it is a sandbox-escape target An AppContainer (or otherwise sandboxed) process cannot touch the filesystem directly - its token carries a restricted capability set, and the object manager denies it any FILE object outside that set. To do legitimate file work it has to ask a broker: a more-privileged component that performs the operation on the sandbox&amp;rsquo;s behalf and hands back the result.</description>
+    </item>
+  </channel>
+</rss>

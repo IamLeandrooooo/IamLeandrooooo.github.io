@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Dft on Leandro&#39;s Code Cave</title>
+    <link>https://iamleandrooooo.github.io/tags/dft/</link>
+    <description>Recent content in Dft on Leandro&#39;s Code Cave</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Wed, 20 May 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://iamleandrooooo.github.io/tags/dft/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Sysprobe - Five Layers of Onion, One DFT, One Flag</title>
+      <link>https://iamleandrooooo.github.io/posts/sysprobe_reverse/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/posts/sysprobe_reverse/</guid>
+      <description>Challenge Category: Reverse Engineering&#xA;Difficulty: 🔴 Hard&#xA;Task Force Nightfall has intercepted a binary pulled from a compromised monitoring node inside a critical infrastructure operator. On the surface it is exactly what it claims to be - a routine diagnostics utility, the kind deployed silently across thousands of managed endpoints. Clean signature, legitimate-looking output, nothing that trips an alert. But the node it was found on had no business running it.</description>
+    </item>
+  </channel>
+</rss>
