@@ -1,0 +1,558 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Tags on Leandro&#39;s Code Cave</title>
+    <link>https://iamleandrooooo.github.io/tags/</link>
+    <description>Recent content in Tags on Leandro&#39;s Code Cave</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Wed, 29 Jul 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://iamleandrooooo.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Acpi</title>
+      <link>https://iamleandrooooo.github.io/tags/acpi/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/acpi/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ahcache</title>
+      <link>https://iamleandrooooo.github.io/tags/ahcache/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ahcache/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Bindflt</title>
+      <link>https://iamleandrooooo.github.io/tags/bindflt/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/bindflt/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Code-Archaeology</title>
+      <link>https://iamleandrooooo.github.io/tags/code-archaeology/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/code-archaeology/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Drivers</title>
+      <link>https://iamleandrooooo.github.io/tags/drivers/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/drivers/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Efs</title>
+      <link>https://iamleandrooooo.github.io/tags/efs/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/efs/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>False-Positive</title>
+      <link>https://iamleandrooooo.github.io/tags/false-positive/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/false-positive/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Filecrypt</title>
+      <link>https://iamleandrooooo.github.io/tags/filecrypt/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/filecrypt/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ghidra</title>
+      <link>https://iamleandrooooo.github.io/tags/ghidra/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ghidra/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Integer-Overflow</title>
+      <link>https://iamleandrooooo.github.io/tags/integer-overflow/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/integer-overflow/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Intelpep</title>
+      <link>https://iamleandrooooo.github.io/tags/intelpep/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/intelpep/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Kernel</title>
+      <link>https://iamleandrooooo.github.io/tags/kernel/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/kernel/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ksecdd</title>
+      <link>https://iamleandrooooo.github.io/tags/ksecdd/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ksecdd/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Minifilter</title>
+      <link>https://iamleandrooooo.github.io/tags/minifilter/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/minifilter/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Msrc</title>
+      <link>https://iamleandrooooo.github.io/tags/msrc/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/msrc/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Refutation</title>
+      <link>https://iamleandrooooo.github.io/tags/refutation/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/refutation/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Reversing</title>
+      <link>https://iamleandrooooo.github.io/tags/reversing/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/reversing/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Vulnerability-Research</title>
+      <link>https://iamleandrooooo.github.io/tags/vulnerability-research/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/vulnerability-research/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Windbg</title>
+      <link>https://iamleandrooooo.github.io/tags/windbg/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/windbg/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Windows</title>
+      <link>https://iamleandrooooo.github.io/tags/windows/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/windows/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>24h2</title>
+      <link>https://iamleandrooooo.github.io/tags/24h2/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/24h2/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Condrv</title>
+      <link>https://iamleandrooooo.github.io/tags/condrv/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/condrv/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Console</title>
+      <link>https://iamleandrooooo.github.io/tags/console/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/console/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Decompiler-Artifact</title>
+      <link>https://iamleandrooooo.github.io/tags/decompiler-artifact/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/decompiler-artifact/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Info-Leak</title>
+      <link>https://iamleandrooooo.github.io/tags/info-leak/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/info-leak/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Inlined-Probe</title>
+      <link>https://iamleandrooooo.github.io/tags/inlined-probe/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/inlined-probe/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ioctl</title>
+      <link>https://iamleandrooooo.github.io/tags/ioctl/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ioctl/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ipc</title>
+      <link>https://iamleandrooooo.github.io/tags/ipc/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ipc/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Kaslr</title>
+      <link>https://iamleandrooooo.github.io/tags/kaslr/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/kaslr/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Memory-Disclosure</title>
+      <link>https://iamleandrooooo.github.io/tags/memory-disclosure/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/memory-disclosure/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Poc</title>
+      <link>https://iamleandrooooo.github.io/tags/poc/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/poc/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Probeforread</title>
+      <link>https://iamleandrooooo.github.io/tags/probeforread/</link>
+      <pubDate>Fri, 10 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/probeforread/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Access-Check</title>
+      <link>https://iamleandrooooo.github.io/tags/access-check/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/access-check/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Appcontainer</title>
+      <link>https://iamleandrooooo.github.io/tags/appcontainer/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/appcontainer/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Bfs</title>
+      <link>https://iamleandrooooo.github.io/tags/bfs/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/bfs/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Brokering-File-System</title>
+      <link>https://iamleandrooooo.github.io/tags/brokering-file-system/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/brokering-file-system/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Capability-Sid</title>
+      <link>https://iamleandrooooo.github.io/tags/capability-sid/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/capability-sid/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Confused-Deputy</title>
+      <link>https://iamleandrooooo.github.io/tags/confused-deputy/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/confused-deputy/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Lowbox-Token</title>
+      <link>https://iamleandrooooo.github.io/tags/lowbox-token/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/lowbox-token/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ntcreatelowboxtoken</title>
+      <link>https://iamleandrooooo.github.io/tags/ntcreatelowboxtoken/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ntcreatelowboxtoken/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Path-Confusion</title>
+      <link>https://iamleandrooooo.github.io/tags/path-confusion/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/path-confusion/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Refuted</title>
+      <link>https://iamleandrooooo.github.io/tags/refuted/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/refuted/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Sandbox</title>
+      <link>https://iamleandrooooo.github.io/tags/sandbox/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/sandbox/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Toctou</title>
+      <link>https://iamleandrooooo.github.io/tags/toctou/</link>
+      <pubDate>Wed, 08 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/toctou/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Container-Escape</title>
+      <link>https://iamleandrooooo.github.io/tags/container-escape/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/container-escape/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ctf</title>
+      <link>https://iamleandrooooo.github.io/tags/ctf/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ctf/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Cve-2026-33017</title>
+      <link>https://iamleandrooooo.github.io/tags/cve-2026-33017/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/cve-2026-33017/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Full-Pwn</title>
+      <link>https://iamleandrooooo.github.io/tags/full-pwn/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/full-pwn/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Hack-the-Box</title>
+      <link>https://iamleandrooooo.github.io/tags/hack-the-box/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/hack-the-box/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Jwt</title>
+      <link>https://iamleandrooooo.github.io/tags/jwt/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/jwt/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Jwt-None-Algorithm</title>
+      <link>https://iamleandrooooo.github.io/tags/jwt-none-algorithm/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/jwt-none-algorithm/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Kubelet</title>
+      <link>https://iamleandrooooo.github.io/tags/kubelet/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/kubelet/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Kubernetes</title>
+      <link>https://iamleandrooooo.github.io/tags/kubernetes/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/kubernetes/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Langflow</title>
+      <link>https://iamleandrooooo.github.io/tags/langflow/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/langflow/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Llm-Security</title>
+      <link>https://iamleandrooooo.github.io/tags/llm-security/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/llm-security/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Mcp</title>
+      <link>https://iamleandrooooo.github.io/tags/mcp/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/mcp/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Nodes-Proxy</title>
+      <link>https://iamleandrooooo.github.io/tags/nodes-proxy/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/nodes-proxy/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Privilege-Escalation</title>
+      <link>https://iamleandrooooo.github.io/tags/privilege-escalation/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/privilege-escalation/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Web-Exploitation</title>
+      <link>https://iamleandrooooo.github.io/tags/web-exploitation/</link>
+      <pubDate>Thu, 21 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/web-exploitation/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Anti-Analysis</title>
+      <link>https://iamleandrooooo.github.io/tags/anti-analysis/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/anti-analysis/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Anti-Debug</title>
+      <link>https://iamleandrooooo.github.io/tags/anti-debug/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/anti-debug/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Binary-Analysis</title>
+      <link>https://iamleandrooooo.github.io/tags/binary-analysis/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/binary-analysis/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Bytecode</title>
+      <link>https://iamleandrooooo.github.io/tags/bytecode/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/bytecode/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Dft</title>
+      <link>https://iamleandrooooo.github.io/tags/dft/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/dft/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Elf</title>
+      <link>https://iamleandrooooo.github.io/tags/elf/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/elf/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Gdb</title>
+      <link>https://iamleandrooooo.github.io/tags/gdb/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/gdb/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Ida-Pro</title>
+      <link>https://iamleandrooooo.github.io/tags/ida-pro/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/ida-pro/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Lcg</title>
+      <link>https://iamleandrooooo.github.io/tags/lcg/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/lcg/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Packer</title>
+      <link>https://iamleandrooooo.github.io/tags/packer/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/packer/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Permutation-Cipher</title>
+      <link>https://iamleandrooooo.github.io/tags/permutation-cipher/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/permutation-cipher/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Reverse-Engineering</title>
+      <link>https://iamleandrooooo.github.io/tags/reverse-engineering/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/reverse-engineering/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Signal-Processing</title>
+      <link>https://iamleandrooooo.github.io/tags/signal-processing/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/signal-processing/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Telemetry</title>
+      <link>https://iamleandrooooo.github.io/tags/telemetry/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/telemetry/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Virtual-Machine</title>
+      <link>https://iamleandrooooo.github.io/tags/virtual-machine/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/virtual-machine/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>X86-64</title>
+      <link>https://iamleandrooooo.github.io/tags/x86-64/</link>
+      <pubDate>Wed, 20 May 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/x86-64/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Reverse</title>
+      <link>https://iamleandrooooo.github.io/tags/reverse/</link>
+      <pubDate>Fri, 03 Oct 2025 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/reverse/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Malware-Analysis</title>
+      <link>https://iamleandrooooo.github.io/tags/malware-analysis/</link>
+      <pubDate>Sat, 13 Sep 2025 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/malware-analysis/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Penetration Testing</title>
+      <link>https://iamleandrooooo.github.io/tags/penetration-testing/</link>
+      <pubDate>Fri, 12 Sep 2025 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/tags/penetration-testing/</guid>
+      <description></description>
+    </item>
+  </channel>
+</rss>

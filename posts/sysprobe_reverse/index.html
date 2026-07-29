@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html><head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Sysprobe - Five Layers of Onion, One DFT, One Flag - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="HTB reversing write-up. Outer ELF is a decoy; the real entry point lives in a hidden RWE segment with no section header, jumps into a DEFLATE-packed nested ELF, which mmap-XORs a 62-byte bytecode for a stack VM, which runs a tiny DFT magnitude check whose output bitmap, packed MSB-first, is the flag." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="https://iamleandrooooo.github.io/posts/sysprobe_reverse/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="Sysprobe - Five Layers of Onion, One DFT, One Flag">
+  <meta property="og:description" content="HTB reversing write-up. Outer ELF is a decoy; the real entry point lives in a hidden RWE segment with no section header, jumps into a DEFLATE-packed nested ELF, which mmap-XORs a 62-byte bytecode for a stack VM, which runs a tiny DFT magnitude check whose output bitmap, packed MSB-first, is the flag.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-05-20T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-05-20T00:00:00+00:00">
+    <meta property="article:tag" content="Reverse-Engineering">
+    <meta property="article:tag" content="Virtual-Machine">
+    <meta property="article:tag" content="Bytecode">
+    <meta property="article:tag" content="Elf">
+    <meta property="article:tag" content="Packer">
+    <meta property="article:tag" content="Dft">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Sysprobe - Five Layers of Onion, One DFT, One Flag">
+  <meta name="twitter:description" content="HTB reversing write-up. Outer ELF is a decoy; the real entry point lives in a hidden RWE segment with no section header, jumps into a DEFLATE-packed nested ELF, which mmap-XORs a 62-byte bytecode for a stack VM, which runs a tiny DFT magnitude check whose output bitmap, packed MSB-first, is the flag.">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="../../">Home</a>
+		
+		<a href="../../posts">All posts</a>
+		
+		<a href="../../about">About</a>
+		
+		<a href="../../tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">Sysprobe - Five Layers of Onion, One DFT, One Flag</h1>
+          <div class="meta">Posted on May 20, 2026</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          Stripped ELF with a hidden RWE segment → nested ELF → DEFLATE-packed payload → XOR-deobfuscated bytecode → stack VM → DFT magnitude check → bitmap → flag. Five layers, one cute meta-flag.
+        </div>
+        <section class="body">
+          <h1 id="challenge">Challenge</h1>
+<p><strong>Category:</strong> Reverse Engineering</p>
+<p><strong>Difficulty:</strong> 🔴 Hard</p>
+<blockquote>
+<p>Task Force Nightfall has intercepted a binary pulled from a compromised monitoring node inside a critical infrastructure operator. On the surface it is exactly what it claims to be - a routine diagnostics utility, the kind deployed silently across thousands of managed endpoints. Clean signature, legitimate-looking output, nothing that trips an alert. But the node it was found on had no business running it. And the traffic logs don&rsquo;t match what a diagnostics tool should produce.</p>
+</blockquote>
+<p>We&rsquo;re given a single 24 KB stripped 64-bit ELF named <code>sysprobe</code>. No data files, no source. The flag is in there somewhere.</p>
+<hr>
+<h1 id="tldr">TL;DR</h1>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-txt" data-lang="txt"><span style="display:flex;"><span>outer ELF (decoy main, never reached)
+</span></span><span style="display:flex;"><span>  └─ real entry → hidden RWE segment at VMA 0x804000  (no section header)
+</span></span><span style="display:flex;"><span>       └─ nested ELF &#34;loader&#34;
+</span></span><span style="display:flex;"><span>            └─ raw DEFLATE inflate of an embedded blob
+</span></span><span style="display:flex;"><span>                 └─ payload ELF (un-stripped, has symbols!)
+</span></span><span style="display:flex;"><span>                      └─ XOR-deobfuscate 62 bytes of bytecode  (deob[i] = obf[i] ^ (i+0x42))
+</span></span><span style="display:flex;"><span>                           └─ stack-VM `vm_run` interprets it
+</span></span><span style="display:flex;"><span>                                └─ opcode 0x22 = DFT magnitude &gt; threshold check
+</span></span><span style="display:flex;"><span>                                     └─ result bitmap → pack bits MSB-first → FLAG
+</span></span></code></pre></div><p>Five payload layers. Plus three smokescreens: malware-themed runtime output, fake diagnostics strings in <code>.rodata</code>, and a &ldquo;C2 beacon / persistence&rdquo; subroutine that does (real but harmless) file writes to make analysts panic.</p>
+<hr>
+<h1 id="-safety-note-before-you-run-it">⚠️ Safety note before you run it</h1>
+<p>The &ldquo;malware&rdquo; theme is partly real. If you run <code>./sysprobe</code> <strong>as root</strong> it will write two files:</p>
+<ul>
+<li><code>/etc/cron.d/sysprobe</code> (a 15-minute cron entry)</li>
+<li><code>/etc/systemd/system/sysprobe.service</code> (a systemd unit)</li>
+</ul>
+<p>Neither references a binary that exists (they both point to <code>/usr/local/bin/sysprobe</code>), but the files <em>are</em> written. Run as an unprivileged user or in a disposable VM/container. If you ran as root, just delete both files, there&rsquo;s nothing else to clean up. The &ldquo;C2 beacon&rdquo; line is <strong>only printed</strong>; no network call is made.</p>
+<hr>
+<h1 id="1-first-contact">1. First contact</h1>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ file sysprobe
+</span></span><span style="display:flex;"><span>sysprobe: ELF 64-bit LSB pie executable, x86-64, version <span style="color:#ae81ff">1</span> <span style="color:#f92672">(</span>SYSV<span style="color:#f92672">)</span>, dynamically linked,
+</span></span><span style="display:flex;"><span>          interpreter /lib64/ld-linux-x86-64.so.2, ... stripped
+</span></span></code></pre></div><p>PIE, dynamically linked, stripped, 24 KB.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/1.png" alt="1">
+    
+  </div>
+</div>
+
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ ./sysprobe
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>sysprobe<span style="color:#f92672">]</span> beacon active
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>vm<span style="color:#f92672">]</span> persistence written: /etc/systemd/system/sysprobe.service
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>vm<span style="color:#f92672">]</span> persistence written: /etc/cron.d/sysprobe
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>vm<span style="color:#f92672">]</span> C2 beacon -&gt; http://update-monitor.net/checkin
+</span></span></code></pre></div><p>Looks like a malware sample. The four lines are designed to make you think &ldquo;ransomware / RAT / persistence rootkit&rdquo; and dive into a <code>strace</code> rather than disassembly. Don&rsquo;t take the bait, <code>strings</code> reveals the misdirection.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/2.png" alt="2">
+    
+  </div>
+</div>
+
+<p><code>strings</code> finds <strong>two</strong> disjoint string sets:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ strings sysprobe | head -30      <span style="color:#75715e"># the .rodata strings</span>
+</span></span><span style="display:flex;"><span>$ strings sysprobe | tail -10       <span style="color:#75715e"># the high-entropy garbage at the end</span>
+</span></span></code></pre></div><p>The first block is harmless diagnostics text - <em>Usage:</em>, <em>CPU Information</em>, <em>Memory Information</em>, <em>&ndash;version</em>, etc.
+The second block is high-entropy noise (the compressed payload).</p>
+<p><strong>Crucially, the four runtime strings you just saw (<code>[sysprobe] beacon active</code>, <code>[vm] persistence written: ...</code>, <code>[vm] C2 beacon -&gt; ...</code>) are NOT visible in <code>strings</code>.</strong> They&rsquo;re not in <code>.rodata</code>. So where are they?</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/3.png" alt="3">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="2-layer-1---the-decoy-main">2. Layer 1 - The decoy <code>main</code></h1>
+<p>Section headers say the binary is tiny:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ objdump -h sysprobe | grep -E <span style="color:#e6db74">&#39;\.text|\.rodata|\.data|\.bss&#39;</span>
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">15</span> .text     0x000002c9  vma 0x10a0
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">17</span> .rodata   0x0000038b  vma 0x2000
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">24</span> .data     0x00000010  vma 0x4000
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">25</span> .bss      0x00000008  vma 0x4010
+</span></span></code></pre></div><p><code>.text</code> is <code>0x2c9</code> bytes, about 700. The function at <code>0x10a0</code> (which IDA labels <code>main</code>/<code>start</code>) does exactly what <code>strings</code> suggested: prints the diagnostics, parses <code>--help</code>/<code>--version</code>/<code>--full</code>, exits.</p>
+<p>But look at the ELF header:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ readelf -h sysprobe | grep -i entry
+</span></span><span style="display:flex;"><span>  Entry point address:               0x804a55
+</span></span></code></pre></div><p><strong><code>0x804a55</code></strong> - far above the section table&rsquo;s reach. Compare program headers (what the loader actually maps) to the section headers (what <code>objdump -d</code> shows):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ readelf -l sysprobe
+</span></span><span style="display:flex;"><span>  ...
+</span></span><span style="display:flex;"><span>  LOAD  0x0000000000004000  0x0000000000804000  0x0000000000804000
+</span></span><span style="display:flex;"><span>        0x0000000000001fa0  0x0000000000001fa0  RWE   0x1000
+</span></span></code></pre></div><p>There it is: an extra <code>LOAD</code> segment, mapped at virtual address <strong><code>0x804000</code></strong>, file offset <code>0x4000</code>, size <code>0x1fa0</code>, permissions <strong><code>R W E</code></strong>, and <em>covered by no section header</em>. The ELF entry point <code>0x804a55</code> sits inside it (offset <code>0xa55</code> into the segment).</p>
+<p>This is a classic packer pattern:</p>
+<ul>
+<li>Section headers are <em>informational only</em> at runtime, the dynamic loader (<code>ld-linux</code>) ignores them and uses program headers.</li>
+<li>Disassembers and <code>objdump</code> love sections.</li>
+<li>Hide your real code in a segment with no section coverage and tools default-blind to it.</li>
+</ul>
+<p>The decompiled <code>main</code> at <code>0x10a0</code> is unreachable code. The real program lives in the RWE segment.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/4.png" alt="4">
+    
+  </div>
+</div>
+
+<p>Extract the hidden segment:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ python3 -c <span style="color:#e6db74">&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">import sys
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">data = open(&#39;sysprobe&#39;,&#39;rb&#39;).read()
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">open(&#39;hidden_seg.bin&#39;,&#39;wb&#39;).write(data[0x4000:0x4000+0x1fa0])
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>$ file hidden_seg.bin
+</span></span><span style="display:flex;"><span>hidden_seg.bin: ELF 64-bit LSB pie executable, x86-64, ... too large section header offset ...
+</span></span></code></pre></div><p>The segment starts with the magic bytes <code>7f 45 4c 46</code>, it&rsquo;s <strong>another ELF</strong>. Its section header table is deliberately corrupted (note the <code>too large section header offset</code> warning), but its program headers are intact (they have to be, the kernel reads them).</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/5.png" alt="5">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="3-layer-2---the-hidden-loader-segment">3. Layer 2 - The hidden loader segment</h1>
+<p>The outer ELF entry <code>0x804a55</code> maps to offset <code>0xa55</code> in the segment. Disassembling it shows a compact loader:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-nasm" data-lang="nasm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a55: <span style="color:#a6e22e">endbr64</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a5b: <span style="color:#a6e22e">mov</span>    r10d, <span style="color:#ae81ff">0x22</span>         <span style="color:#75715e">; MAP_PRIVATE | MAP_ANONYMOUS</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a65: <span style="color:#a6e22e">xor</span>    r9d, r9d           <span style="color:#75715e">; offset = 0</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a6f: <span style="color:#a6e22e">mov</span>    edx, <span style="color:#ae81ff">7</span>             <span style="color:#75715e">; PROT_READ | PROT_WRITE | PROT_EXEC</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a7c: <span style="color:#a6e22e">xor</span>    edi, edi           <span style="color:#75715e">; addr = NULL</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a7f: <span style="color:#a6e22e">mov</span>    ebx, <span style="color:#ae81ff">9</span>             <span style="color:#75715e">; SYS_mmap</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a88: <span style="color:#a6e22e">mov</span>    r15d, [rip<span style="color:#f92672">+</span><span style="color:#ae81ff">0x4f1</span>]  <span style="color:#75715e">;</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a8f: <span style="color:#a6e22e">mov</span>    eax, [rip<span style="color:#f92672">+</span><span style="color:#ae81ff">0x4ef</span>]   <span style="color:#75715e">; size from header</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804a95: <span style="color:#a6e22e">mov</span>    r14d, [rip<span style="color:#f92672">+</span><span style="color:#ae81ff">0x4ec</span>]  <span style="color:#75715e">; entry offset within payload</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804aa1: <span style="color:#a6e22e">mov</span>    rsi, rax
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804aa7: <span style="color:#a6e22e">syscall</span>                    <span style="color:#75715e">; mmap RWX buffer</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804ac7: <span style="color:#a6e22e">call</span>   <span style="color:#ae81ff">0x8045b5</span>           <span style="color:#75715e">; ← decompress into rbx</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804adb: <span style="color:#a6e22e">add</span>    rbx, r14
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804ae4: <span style="color:#a6e22e">call</span>   rbx                <span style="color:#75715e">; ← jump into decompressed payload</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804ae6: <span style="color:#a6e22e">mov</span>    eax, <span style="color:#ae81ff">0x3c</span>          <span style="color:#75715e">; SYS_exit</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x804aed: <span style="color:#a6e22e">syscall</span>
+</span></span></code></pre></div><p>So the loader: (1) <code>mmap</code>s an RWX buffer of the size encoded in a small header, (2) calls <code>0x8045b5</code> to inflate the compressed blob into it, (3) computes <code>rbx + r14</code> (= base + entry_offset) and calls that address.</p>
+<p>The decompressor at <code>0x8045b5</code> is a hand-rolled <strong>raw DEFLATE</strong> implementation. You can confirm by spotting the fixed-Huffman code-length signature (<code>8, 9, 7, 8</code> for literal/length/distance bit-widths) and the length/distance extra-bit tables.</p>
+<p>We don&rsquo;t need to reverse it. Python&rsquo;s <code>zlib.decompress(..., -15)</code> decompresses raw DEFLATE with no zlib wrapper.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/6.png" alt="6">
+    
+  </div>
+</div>
+
+<p>The compressed stream itself starts inside the segment at file-offset <code>0xf98</code>. We extract and inflate:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> zlib
+</span></span><span style="display:flex;"><span>data <span style="color:#f92672">=</span> open(<span style="color:#e6db74">&#39;hidden_seg.bin&#39;</span>,<span style="color:#e6db74">&#39;rb&#39;</span>)<span style="color:#f92672">.</span>read()
+</span></span><span style="display:flex;"><span>payload <span style="color:#f92672">=</span> zlib<span style="color:#f92672">.</span>decompress(data[<span style="color:#ae81ff">0xf98</span>:], <span style="color:#f92672">-</span><span style="color:#ae81ff">15</span>)
+</span></span><span style="display:flex;"><span>open(<span style="color:#e6db74">&#39;payload.bin&#39;</span>,<span style="color:#e6db74">&#39;wb&#39;</span>)<span style="color:#f92672">.</span>write(payload)
+</span></span><span style="display:flex;"><span>print(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;decompressed </span><span style="color:#e6db74">{</span>len(payload)<span style="color:#e6db74">}</span><span style="color:#e6db74"> bytes&#34;</span>)
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>decompressed 9464 bytes
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ file payload.bin
+</span></span><span style="display:flex;"><span>payload.bin: ELF 64-bit LSB shared object, x86-64, ... not stripped
+</span></span></code></pre></div><p>A <em>non-stripped</em> nested ELF. The packer authors gave us symbols. Generous of them.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/7.png" alt="7">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="4-layer-3---the-payloads-symbol-table">4. Layer 3 - The payload&rsquo;s symbol table</h1>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ readelf -s payload.bin | grep -v <span style="color:#e6db74">&#39;UND\|SECTION\|FILE&#39;</span>
+</span></span></code></pre></div><p>The useful entries:</p>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>payload_entry</code>  @ <code>0x380</code></td>
+<td>the real <code>main</code>-equivalent</td>
+</tr>
+<tr>
+<td><code>vm_run</code>  @ <code>0x520</code></td>
+<td>a ~2.9 KB stack-based bytecode interpreter</td>
+</tr>
+<tr>
+<td><code>_binary_vm_bytecode_bin_*</code></td>
+<td>start/end markers of an embedded 62-byte bytecode (<code>0x1ca0</code>–<code>0x1cde</code>)</td>
+</tr>
+<tr>
+<td><code>QB_REAL</code> @ <code>0x1260</code> (1024 B)</td>
+<td>a 1 KB data table (interpreted as 256 int32 values)</td>
+</tr>
+<tr>
+<td><code>beacon.0</code>, <code>svc_body.2</code>, <code>cron_body.0</code>, <code>svc.3</code>, <code>cron.1</code></td>
+<td>the decoy runtime strings + persistence file contents</td>
+</tr>
+<tr>
+<td><code>memcpy</code>, <code>memset</code>, <code>strlen</code>, <code>sin</code>, <code>cos</code>, <code>sincos</code>, <code>sqrt</code>, <code>mmap</code>, <code>munmap</code></td>
+<td>static libc bits (the payload is self-contained, no external libc calls)</td>
+</tr>
+</tbody>
+</table>
+<p><code>payload_entry</code> decompiles cleanly. Its job:</p>
+<ol>
+<li><code>mmap</code> a buffer and <strong>XOR-deobfuscate</strong> the embedded bytecode into it.</li>
+<li><code>mmap</code> a <code>0x2000</code>-byte VM state, seed it (copy <code>QB_REAL</code> into the data area, copy the decoy strings, write a few constants).</li>
+<li>Call <code>vm_run</code>.</li>
+<li><code>munmap</code> everything and <code>_exit</code>.</li>
+</ol>
+<p>The XOR loop is the textbook two-instruction shape:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x3e0: <span style="color:#a6e22e">lea</span>  <span style="color:#66d9ef">edx</span>, [<span style="color:#66d9ef">rax</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#ae81ff">0x42</span>]    <span style="color:#75715e">; edx = i + 0x42
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x3e3: <span style="color:#a6e22e">xor</span>  <span style="color:#66d9ef">dl</span>, [<span style="color:#66d9ef">r12</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#66d9ef">rax</span>]       <span style="color:#75715e">; dl ^= obf[i]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x3e7: <span style="color:#a6e22e">mov</span>  [<span style="color:#66d9ef">rbp</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#66d9ef">rax</span>], <span style="color:#66d9ef">dl</span>       <span style="color:#75715e">; out[i] = dl
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x3eb: <span style="color:#a6e22e">add</span>  <span style="color:#66d9ef">rax</span>, <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x3ef: <span style="color:#a6e22e">cmp</span>  <span style="color:#66d9ef">rbx</span>, <span style="color:#66d9ef">rax</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x3f2: <span style="color:#a6e22e">jne</span>  <span style="color:#ae81ff">0x3e0</span>
+</span></span></code></pre></div><p>So <code>deob[i] = obf[i] ^ ((i + 0x42) &amp; 0xff)</code>. Recover the real bytecode:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>data <span style="color:#f92672">=</span> open(<span style="color:#e6db74">&#39;payload.bin&#39;</span>,<span style="color:#e6db74">&#39;rb&#39;</span>)<span style="color:#f92672">.</span>read()
+</span></span><span style="display:flex;"><span>obf  <span style="color:#f92672">=</span> data[<span style="color:#ae81ff">0x1ca0</span>:<span style="color:#ae81ff">0x1cde</span>]                         <span style="color:#75715e"># _binary_vm_bytecode_bin_*</span>
+</span></span><span style="display:flex;"><span>deob <span style="color:#f92672">=</span> bytes(((i <span style="color:#f92672">+</span> <span style="color:#ae81ff">0x42</span>) <span style="color:#f92672">^</span> b) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xff</span> <span style="color:#66d9ef">for</span> i, b <span style="color:#f92672">in</span> enumerate(obf))
+</span></span><span style="display:flex;"><span>open(<span style="color:#e6db74">&#39;bytecode.bin&#39;</span>,<span style="color:#e6db74">&#39;wb&#39;</span>)<span style="color:#f92672">.</span>write(deob)
+</span></span><span style="display:flex;"><span>print(deob<span style="color:#f92672">.</span>hex())
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>01 00 00 04 0e 01 0e 03 0e 04 01 02 01 00 0f cc
+</span></span><span style="display:flex;"><span>14 00 20 88 01 00 3b 00 21 ca 01 00 64 00 21 e1
+</span></span><span style="display:flex;"><span>01 00 37 00 21 c9 01 00 2d 00 21 99 01 00 2e 00
+</span></span><span style="display:flex;"><span>21 e0 01 00 2f 00 21 d9 01 01 05 00 22 ff
+</span></span></code></pre></div><p>(For trivia: the obfuscated form <code>CCDAHFFJDOMOOO_…</code> is visible as a <code>strings</code>-able ASCII run <em>in <code>payload.bin</code></em> but <strong>not</strong> in the outer <code>sysprobe</code>, because at that level it&rsquo;s still buried inside the compressed blob.)</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/8.png" alt="8">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="5-layer-4---the-vm">5. Layer 4 - The VM</h1>
+<p><code>vm_run</code> (0x520, 2918 bytes) is a textbook accumulator-style bytecode interpreter:</p>
+<ul>
+<li>5 general registers (<code>r0</code>–<code>r4</code>) at <code>+0x00</code>, <code>+0x08</code>, <code>+0x10</code>, <code>+0x18</code>, <code>+0x20</code></li>
+<li>PC at <code>+0x28</code>, stack pointer at <code>+0x30</code></li>
+<li>a <strong>mode flag</strong> at <code>+0x38</code> (low bit toggles short vs extended encodings)</li>
+<li>bytecode pointer / size at <code>+0x40</code> / <code>+0x48</code></li>
+<li>a downward-growing 0x1000-byte stack starting at <code>+0x50</code></li>
+<li>a data buffer at <code>+0x1050</code> (the decoy strings + <code>QB_REAL</code> live here)</li>
+<li>two <code>0x1000</code>-byte arrays at <code>+0x3050</code> (real) and <code>+0x4050</code> (imaginary) - DFT scratch</li>
+<li>a result region at <code>+0x5054</code>–<code>+0x5260</code></li>
+</ul>
+<p>Dispatch is a single jump table starting at offset <code>0x17e0</code> in the payload (35 entries, opcodes <code>0x00</code>–<code>0x22</code>), reached via <code>lea rbp,[rip+0x120a]; ...; movsxd rdi,[rbp+rdi*4]; jmp rdi</code>. Opcodes ≥ <code>0x23</code> halt (<code>0xff</code>) or are no-ops. Opcodes <code>0x15</code>–<code>0x1f</code> are explicitly invalid stubs.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-nasm" data-lang="nasm"><span style="display:flex;"><span><span style="color:#75715e">; vm_run+0x114 - the dispatch loop</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x634: <span style="color:#a6e22e">mov</span>    rax, [rbx<span style="color:#f92672">+</span><span style="color:#ae81ff">0x28</span>]         <span style="color:#75715e">; PC</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x638: <span style="color:#a6e22e">cmp</span>    rax, [rbx<span style="color:#f92672">+</span><span style="color:#ae81ff">0x48</span>]         <span style="color:#75715e">; PC vs size</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x63c: <span style="color:#a6e22e">jae</span>    <span style="color:#ae81ff">0x5d8</span>                    <span style="color:#75715e">; halt on overflow</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x646: <span style="color:#a6e22e">mov</span>    rsi, [rbx<span style="color:#f92672">+</span><span style="color:#ae81ff">0x38</span>]         <span style="color:#75715e">; mode flags</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x655: <span style="color:#a6e22e">and</span>    ecx, <span style="color:#ae81ff">1</span>                   <span style="color:#75715e">; ecx = mode &amp; 1 (ext bit)</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x658: <span style="color:#a6e22e">cmp</span>    dil, <span style="color:#ae81ff">0x22</span>                <span style="color:#75715e">; opcode &gt; 0x22?</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x65c: <span style="color:#a6e22e">ja</span>     <span style="color:#ae81ff">0x669</span>                    <span style="color:#75715e">; invalid → maybe halt</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x65e: <span style="color:#a6e22e">movsxd</span> rdi, [rbp <span style="color:#f92672">+</span> rdi<span style="color:#f92672">*</span><span style="color:#ae81ff">4</span>]      <span style="color:#75715e">; jumptable[opcode]</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x666: <span style="color:#a6e22e">jmp</span>    rdi
+</span></span></code></pre></div><h2 id="the-mode-flag">The mode flag</h2>
+<p>A few opcodes encode differently depending on the mode bit. For the opcodes that matter here:</p>
+<table>
+<thead>
+<tr>
+<th>Opcode</th>
+<th>Short form</th>
+<th>Extended form</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0x01 LOAD</code></td>
+<td><code>r ← imm16</code></td>
+<td><code>r ← imm16 ^ (xor_byte &lt;&lt; 8)</code></td>
+</tr>
+<tr>
+<td><code>0x0f TOGGLE</code></td>
+<td>flip mode, <code>PC += r2</code></td>
+<td>also consumes 1 extra byte</td>
+</tr>
+<tr>
+<td><code>0x14 SETMODE</code></td>
+<td><code>mode = imm8</code></td>
+<td>preserves high bits, low byte = imm</td>
+</tr>
+<tr>
+<td><code>0x20 DFT_INIT</code></td>
+<td>2-byte op</td>
+<td>(handled identically in this code)</td>
+</tr>
+<tr>
+<td><code>0x21 DFT_TWIDDLE</code></td>
+<td>2-byte op</td>
+<td>(same)</td>
+</tr>
+<tr>
+<td><code>0x22 MAG_CHECK</code></td>
+<td>1-byte op</td>
+<td>(same)</td>
+</tr>
+<tr>
+<td><code>0xff HALT</code></td>
+<td>exit</td>
+<td>exit</td>
+</tr>
+</tbody>
+</table>
+<p>The 35-entry table covers a lot more (PUSH/POP, JMP/CALL/RET, ADD/SUB/XOR/AND, ROR/ROL, CMP, MAC, LDBUF/STBUF, SETSUB) - the rest are unused by <em>this</em> program, but presumably exist so writing your own VM bytecode (and so reading the disassembler) takes longer.</p>
+<h2 id="hand-tracing-the-program">Hand-tracing the program</h2>
+<p>We walk the program ourselves with a small Python disassembler. The key is that <em>variable-length instructions</em> depend on the mode flag, so we have to step through in execution order, a flat linear sweep would mis-decode anything past the first <code>TOGGLE</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e">#!/usr/bin/env python3</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> sys
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>BC <span style="color:#f92672">=</span> bytes<span style="color:#f92672">.</span>fromhex(
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;010000040e010e030e04010201000fcc&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;1400208801003b0021ca0100640021e1&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;0100370021c901002d00219901002e00&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;21e001002f0021d90101050022ff&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>bc <span style="color:#f92672">=</span> open(sys<span style="color:#f92672">.</span>argv[<span style="color:#ae81ff">1</span>], <span style="color:#e6db74">&#34;rb&#34;</span>)<span style="color:#f92672">.</span>read() <span style="color:#66d9ef">if</span> len(sys<span style="color:#f92672">.</span>argv) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">1</span> <span style="color:#66d9ef">else</span> BC
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">show</span>(pc, raw, mn, c<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;&#34;</span>):
+</span></span><span style="display:flex;"><span>    print(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;pc=</span><span style="color:#e6db74">{</span>pc<span style="color:#e6db74">:</span><span style="color:#e6db74">3d</span><span style="color:#e6db74">}</span><span style="color:#e6db74">  mode=</span><span style="color:#e6db74">{</span>mode<span style="color:#e6db74">}</span><span style="color:#e6db74">  </span><span style="color:#e6db74">{</span>raw<span style="color:#f92672">.</span>hex()<span style="color:#e6db74">:</span><span style="color:#e6db74">&lt;12</span><span style="color:#e6db74">}</span><span style="color:#e6db74">  </span><span style="color:#e6db74">{</span>mn<span style="color:#e6db74">:</span><span style="color:#e6db74">&lt;26</span><span style="color:#e6db74">}{</span>(<span style="color:#e6db74">&#39;; &#39;</span> <span style="color:#f92672">+</span> c) <span style="color:#66d9ef">if</span> c <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#39;&#39;</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>pc <span style="color:#f92672">=</span> mode <span style="color:#f92672">=</span> r0 <span style="color:#f92672">=</span> r1 <span style="color:#f92672">=</span> r2 <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> pc <span style="color:#f92672">&lt;</span> len(bc):
+</span></span><span style="display:flex;"><span>    op, ext <span style="color:#f92672">=</span> bc[pc], mode <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x01</span>:                                   <span style="color:#75715e"># LOAD rN, imm16 (+xor in ext)</span>
+</span></span><span style="display:flex;"><span>        r, imm <span style="color:#f92672">=</span> bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>], bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">2</span>] <span style="color:#f92672">|</span> (bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">3</span>] <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">8</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> ext:
+</span></span><span style="display:flex;"><span>            imm <span style="color:#f92672">^=</span> bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">4</span>] <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">8</span>;  ln <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>            ln <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span>
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span>ln], <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;LOAD r</span><span style="color:#e6db74">{</span>r<span style="color:#e6db74">}</span><span style="color:#e6db74">, </span><span style="color:#e6db74">{</span>imm<span style="color:#e6db74">:</span><span style="color:#e6db74">#06x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span>   r <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>: r0 <span style="color:#f92672">=</span> imm
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> r <span style="color:#f92672">==</span> <span style="color:#ae81ff">1</span>: r1 <span style="color:#f92672">=</span> imm
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> r <span style="color:#f92672">==</span> <span style="color:#ae81ff">2</span>: r2 <span style="color:#f92672">=</span> imm
+</span></span><span style="display:flex;"><span>        pc <span style="color:#f92672">+=</span> ln
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x0e</span>:                                 <span style="color:#75715e"># SETSUB n</span>
+</span></span><span style="display:flex;"><span>        sub <span style="color:#f92672">=</span> bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>]
+</span></span><span style="display:flex;"><span>        note <span style="color:#f92672">=</span> {<span style="color:#ae81ff">1</span>: <span style="color:#e6db74">&#34;print buf[r0]&#34;</span>, <span style="color:#ae81ff">3</span>: <span style="color:#e6db74">&#34;decoy persistence writes&#34;</span>, <span style="color:#ae81ff">4</span>: <span style="color:#e6db74">&#34;decoy C2 line&#34;</span>}<span style="color:#f92672">.</span>get(sub, <span style="color:#e6db74">&#34;&#34;</span>)
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">2</span>], <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;SETSUB </span><span style="color:#e6db74">{</span>sub<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>, note);  pc <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x0f</span>:                                 <span style="color:#75715e"># TOGGLE</span>
+</span></span><span style="display:flex;"><span>        ln <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span> <span style="color:#66d9ef">if</span> ext <span style="color:#66d9ef">else</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span>ln], <span style="color:#e6db74">&#34;TOGGLE&#34;</span>, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;mode flip, PC += r2 (=</span><span style="color:#e6db74">{</span>r2<span style="color:#e6db74">}</span><span style="color:#e6db74">)&#34;</span>)
+</span></span><span style="display:flex;"><span>        pc <span style="color:#f92672">+=</span> ln <span style="color:#f92672">+</span> r2;  mode <span style="color:#f92672">^=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x14</span>:                                 <span style="color:#75715e"># SETMODE imm8</span>
+</span></span><span style="display:flex;"><span>        imm <span style="color:#f92672">=</span> bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>];  show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">2</span>], <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;SETMODE </span><span style="color:#e6db74">{</span>imm<span style="color:#e6db74">:</span><span style="color:#e6db74">#04x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;mode -&gt; </span><span style="color:#e6db74">{</span>imm<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        mode <span style="color:#f92672">=</span> imm <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> ext <span style="color:#66d9ef">else</span> (mode <span style="color:#f92672">&amp;</span> <span style="color:#f92672">~</span><span style="color:#ae81ff">0xff</span>) <span style="color:#f92672">|</span> imm;  pc <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x20</span>:                                 <span style="color:#75715e"># DFT_INIT imm8</span>
+</span></span><span style="display:flex;"><span>        imm <span style="color:#f92672">=</span> bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>];  N <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> (imm <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0x7f</span>)
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">2</span>], <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;DFT_INIT </span><span style="color:#e6db74">{</span>imm<span style="color:#e6db74">:</span><span style="color:#e6db74">#04x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;N = </span><span style="color:#e6db74">{</span>N<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#f92672">+</span> (<span style="color:#e6db74">&#34; (load QB_REAL)&#34;</span> <span style="color:#66d9ef">if</span> imm <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0x80</span> <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;&#34;</span>))
+</span></span><span style="display:flex;"><span>        pc <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x21</span>:                                 <span style="color:#75715e"># DFT_TWIDDLE imm8</span>
+</span></span><span style="display:flex;"><span>        imm <span style="color:#f92672">=</span> bc[pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>]
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">2</span>], <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;DFT_TWIDDLE </span><span style="color:#e6db74">{</span>imm<span style="color:#e6db74">:</span><span style="color:#e6db74">#04x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;angle ~ r0(=</span><span style="color:#e6db74">{</span>r0<span style="color:#e6db74">:</span><span style="color:#e6db74">#06x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">) ^ </span><span style="color:#e6db74">{</span>imm <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0x7f</span><span style="color:#e6db74">:</span><span style="color:#e6db74">#04x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        pc <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x22</span>:                                 <span style="color:#75715e"># MAG_CHECK</span>
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>], <span style="color:#e6db74">&#34;MAG_CHECK&#34;</span>, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;threshold = r1/1000 = </span><span style="color:#e6db74">{</span>r1<span style="color:#f92672">/</span><span style="color:#ae81ff">1000</span><span style="color:#e6db74">:</span><span style="color:#e6db74">.4f</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>);  pc <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">elif</span> op <span style="color:#f92672">==</span> <span style="color:#ae81ff">0xff</span>:
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>], <span style="color:#e6db74">&#34;HALT&#34;</span>);  <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>:
+</span></span><span style="display:flex;"><span>        show(pc, bc[pc:pc<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>], <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;&lt;unhandled </span><span style="color:#e6db74">{</span>op<span style="color:#e6db74">:</span><span style="color:#e6db74">#04x</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&gt;&#34;</span>);  <span style="color:#66d9ef">break</span>
+</span></span></code></pre></div><p>Run it and the bytecode reduces to:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>pc=0  mode=0  01 00 00 04        LOAD  r0,  0x0400          ; offset of &#34;[sysprobe] beacon active&#34; in buf
+</span></span><span style="display:flex;"><span>pc=4  mode=0  0e 01              SETSUB 1                   ; print buf[r0]
+</span></span><span style="display:flex;"><span>pc=6  mode=0  0e 03              SETSUB 3                   ; decoy persistence file writes
+</span></span><span style="display:flex;"><span>pc=8  mode=0  0e 04              SETSUB 4                   ; decoy C2 line
+</span></span><span style="display:flex;"><span>pc=10 mode=0  01 02 01 00        LOAD  r2,  0x0001
+</span></span><span style="display:flex;"><span>pc=14 mode=0  0f                 TOGGLE                     ; mode 0→1, PC += r2 (skip 1 byte)
+</span></span><span style="display:flex;"><span>pc=16 mode=1  14 00              SETMODE 0x00               ; mode → 0
+</span></span><span style="display:flex;"><span>pc=18 mode=0  20 88              DFT_INIT 0x88              ; N = 1 &lt;&lt; (0x88 &amp; 0x7f) = 1&lt;&lt;8 = 256
+</span></span><span style="display:flex;"><span>pc=20 mode=0  01 00 3b 00        LOAD  r0, 0x003b
+</span></span><span style="display:flex;"><span>pc=24 mode=0  21 ca              DFT_TWIDDLE 0xca           ;
+</span></span><span style="display:flex;"><span>pc=26 mode=0  01 00 64 00        LOAD  r0, 0x0064
+</span></span><span style="display:flex;"><span>pc=30 mode=0  21 e1              DFT_TWIDDLE 0xe1           ;
+</span></span><span style="display:flex;"><span>pc=32 mode=0  01 00 37 00        LOAD  r0, 0x0037
+</span></span><span style="display:flex;"><span>pc=36 mode=0  21 c9              DFT_TWIDDLE 0xc9           ; six twiddle passes,
+</span></span><span style="display:flex;"><span>pc=38 mode=0  01 00 2d 00        LOAD  r0, 0x002d           ; each parameterised
+</span></span><span style="display:flex;"><span>pc=42 mode=0  21 99              DFT_TWIDDLE 0x99           ; by (r0, imm)
+</span></span><span style="display:flex;"><span>pc=44 mode=0  01 00 2e 00        LOAD  r0, 0x002e           ;
+</span></span><span style="display:flex;"><span>pc=48 mode=0  21 e0              DFT_TWIDDLE 0xe0           ;
+</span></span><span style="display:flex;"><span>pc=50 mode=0  01 00 2f 00        LOAD  r0, 0x002f           ;
+</span></span><span style="display:flex;"><span>pc=54 mode=0  21 d9              DFT_TWIDDLE 0xd9           ;
+</span></span><span style="display:flex;"><span>pc=56 mode=0  01 01 05 00        LOAD  r1, 0x0005           ; threshold input
+</span></span><span style="display:flex;"><span>pc=60 mode=0  22                 MAG_CHECK                  ; ← the flag routine
+</span></span><span style="display:flex;"><span>pc=61 mode=0  ff                 HALT
+</span></span></code></pre></div><p>So the four &ldquo;malware&rdquo; lines are pure misdirection. The TOGGLE/SETMODE pair at PC 14–16 is a five-byte no-op (toggle into ext, immediately reset to short), likely there to confuse a static-only analyst. <strong>Everything that matters happens in the last 22 bytes: <code>DFT_INIT → six DFT_TWIDDLEs → MAG_CHECK</code>.</strong></p>
+<hr>
+<h1 id="6-layer-5---dft-magnitude-check">6. Layer 5 - DFT magnitude check</h1>
+<p>The three custom opcodes all touch the two <code>0x1000</code>-byte arrays at <code>state+0x3050</code> (real) and <code>state+0x4050</code> (imag).</p>
+<h2 id="dft_init-0x88"><code>DFT_INIT 0x88</code></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x7ec: <span style="color:#a6e22e">...</span>                         <span style="color:#75715e">; imm8 = 0x88
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x803: <span style="color:#a6e22e">and</span> <span style="color:#66d9ef">eax</span>, <span style="color:#ae81ff">0x7f</span>               <span style="color:#75715e">; eax = 8
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x80c: <span style="color:#a6e22e">cmp</span> <span style="color:#66d9ef">eax</span>, <span style="color:#ae81ff">8</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x80f: <span style="color:#a6e22e">ja</span>  <span style="color:#ae81ff">0x81a</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x811: <span style="color:#a6e22e">mov</span> <span style="color:#66d9ef">r12d</span>, <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x817: <span style="color:#a6e22e">shl</span> <span style="color:#66d9ef">r12d</span>, <span style="color:#66d9ef">cl</span>                <span style="color:#75715e">; r12 = 1 &lt;&lt; 8 = 256
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x820: <span style="color:#a6e22e">mov</span> [<span style="color:#66d9ef">rbx</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#ae81ff">0x5050</span>], <span style="color:#66d9ef">r12d</span>      <span style="color:#75715e">; N = 256
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>       <span style="color:#75715e">; ...zero both arrays...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x88c: <span style="color:#a6e22e">cvtsi2sd</span> <span style="color:#66d9ef">xmm0</span>, <span style="color:#66d9ef">dword</span>[<span style="color:#66d9ef">rbx</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">rax</span>*<span style="color:#ae81ff">4</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#ae81ff">0x1050</span>]   <span style="color:#75715e">; reads int32 from buf!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x895: <span style="color:#a6e22e">mulsd</span>    <span style="color:#66d9ef">xmm0</span>, [<span style="color:#66d9ef">rip</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#ae81ff">0x114b</span>]               <span style="color:#75715e">; * 1/2^30
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x89d: <span style="color:#a6e22e">movsd</span>    [<span style="color:#66d9ef">rbx</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#66d9ef">rax</span>*<span style="color:#ae81ff">8</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#ae81ff">0x3050</span>], <span style="color:#66d9ef">xmm0</span>          <span style="color:#75715e">; real[a] = scaled value
+</span></span></span></code></pre></div><p>So <code>DFT_INIT imm</code>:</p>
+<ul>
+<li>sets <code>N = 1 &lt;&lt; (imm &amp; 0x7f)</code> (clipped to <code>[1, 256]</code>)</li>
+<li>zeroes <code>real[]</code> and <code>imag[]</code></li>
+<li>if the high bit of <code>imm</code> is set, fills <code>real[0..N-1]</code> with <code>(int32)QB_REAL[a] / 2^30</code></li>
+</ul>
+<p><code>QB_REAL</code> is <strong>not</strong> 128 doubles, that&rsquo;s a <code>cvtsi2sd dword</code>, so it&rsquo;s <strong>256 int32</strong>s. Decoding it: six distinct values (<code>-26490176, 0, 26490176, 79264536, 105754712, 132244889</code>), packed densely in the first 208 cells and zero from index 208 onwards. Treat it as an <code>13×16</code> grid (the rest is padding); each <code>(int32 / 2^30)</code> is small (~0–0.12), so we start with a tiny finite &ldquo;image&rdquo; in the real array.</p>
+<h2 id="dft_twiddle-imm"><code>DFT_TWIDDLE imm</code></h2>
+<p>Reads the imm byte, computes an angle from <code>r0</code> and the imm:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>angle = (r0 ^ (imm &amp; 0x7f)) * (1/256) * (1/256)
+</span></span><span style="display:flex;"><span>if imm &amp; 0x80: angle = -angle
+</span></span><span style="display:flex;"><span>(sin_a, cos_a) = sincos(angle)
+</span></span></code></pre></div><p>then runs a strided pass over the arrays applying a complex rotation:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>for a in range(1, N, 2):
+</span></span><span style="display:flex;"><span>    re[a], im[a]      = re[a]*cos_a - im[a]*sin_a, re[a]*sin_a + im[a]*cos_a
+</span></span><span style="display:flex;"><span>    re[a+N/2], im[a+N/2] = re[a+N/2]*cos_a - im[a+N/2]*sin_a, ...
+</span></span></code></pre></div><p>(plus more involved butterfly bookkeeping). What it&rsquo;s <em>physically doing</em>, a single twiddle stage of a custom transform, is less important than what we see in the loop: it&rsquo;s a <code>sin</code>/<code>cos</code>-based shuffle parameterised by <code>r0 ^ imm</code>. After six passes with the six (r0, imm) pairs from the trace, the (real, imag) arrays hold the transformed spectrum.</p>
+<h2 id="mag_check---the-actual-flag-operation"><code>MAG_CHECK</code> - the actual flag operation</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x683: <span style="color:#a6e22e">mov</span>     <span style="color:#66d9ef">rax</span>, [<span style="color:#66d9ef">rbx</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#ae81ff">0x8</span>]            <span style="color:#75715e">; rax = r1 = 5
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x694: <span style="color:#a6e22e">cvtsi2sd</span> <span style="color:#66d9ef">xmm0</span>, <span style="color:#66d9ef">rax</span>                 <span style="color:#75715e">; xmm0 = (double)r1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x6a3: <span style="color:#a6e22e">divsd</span>   <span style="color:#66d9ef">xmm0</span>, [<span style="color:#66d9ef">rip</span><span style="color:#960050;background-color:#1e0010">+</span><span style="color:#ae81ff">0x135d</span>]         <span style="color:#75715e">; xmm0 = r1 / 1000.0 = 0.005   ← THRESHOLD
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>       <span style="color:#75715e">; ... loop ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x6ca: <span style="color:#a6e22e">movsd</span>  <span style="color:#66d9ef">xmm1</span>, [<span style="color:#66d9ef">rbx</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#66d9ef">rax</span>*<span style="color:#ae81ff">8</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#ae81ff">0x3048</span>]
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x6d6: <span style="color:#a6e22e">movsd</span>  <span style="color:#66d9ef">xmm2</span>, [<span style="color:#66d9ef">rbx</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#66d9ef">rax</span>*<span style="color:#ae81ff">8</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#ae81ff">0x4048</span>]
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x6e5: <span style="color:#a6e22e">mulsd</span>  <span style="color:#66d9ef">xmm1</span>, <span style="color:#66d9ef">xmm1</span>                  <span style="color:#75715e">; xmm1 = re*re
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x6e9: <span style="color:#a6e22e">mulsd</span>  <span style="color:#66d9ef">xmm2</span>, <span style="color:#66d9ef">xmm2</span>                  <span style="color:#75715e">; xmm2 = im*im
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x6ed: <span style="color:#a6e22e">addsd</span>  <span style="color:#66d9ef">xmm1</span>, <span style="color:#66d9ef">xmm2</span>                  <span style="color:#75715e">; xmm1 = |X|²
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">0</span>x6f1: <span style="color:#a6e22e">comisd</span> <span style="color:#66d9ef">xmm1</span>, <span style="color:#66d9ef">xmm0</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">0</span>x6f5: <span style="color:#a6e22e">seta</span>   [<span style="color:#66d9ef">rbx</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#66d9ef">rdx</span> <span style="color:#960050;background-color:#1e0010">+</span> <span style="color:#ae81ff">0x5054</span>]        <span style="color:#75715e">; bitmap[i] = (|X|² &gt; threshold)
+</span></span></span></code></pre></div><p>So for each bin <code>i</code>, write <code>1</code> if magnitude² is above <code>0.005</code>, else <code>0</code>. The result is a long binary array starting at offset <code>0x5054</code> in the VM state.</p>
+<p>That bitmap, packed <strong>MSB-first, 8 bits per byte</strong>, is the flag.</p>
+<hr>
+<h1 id="7-capturing-the-result">7. Capturing the result</h1>
+<p>The cleanest way to get the bitmap is dynamic: <code>vm_run</code> <code>munmap</code>s its <code>0x5260</code>-byte state buffer just before returning, so we catch the <code>munmap(state, 0x5260)</code> syscall on entry, dump the buffer, and detach.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ cat &gt; dump.gdb <span style="color:#e6db74">&lt;&lt;&#39;EOF&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">set pagination off
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">catch syscall munmap
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">commands
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  silent
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  if $rsi == 0x5260
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    printf &#34;vm state @ 0x%lx, dumping...\n&#34;, $rdi
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    dump binary memory vm_state.bin $rdi ($rdi)+0x5260
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    detach
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    quit
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  end
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  continue
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">end
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">run
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">EOF</span>
+</span></span><span style="display:flex;"><span>$ gdb -q -batch -x dump.gdb ./sysprobe
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>sysprobe<span style="color:#f92672">]</span> beacon active
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>vm<span style="color:#f92672">]</span> persistence written: /etc/systemd/system/sysprobe.service
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>vm<span style="color:#f92672">]</span> persistence written: /etc/cron.d/sysprobe
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>vm<span style="color:#f92672">]</span> C2 beacon -&gt; http://update-monitor.net/checkin
+</span></span><span style="display:flex;"><span>vm state @ 0x7ffff7faf000, dumping...
+</span></span><span style="display:flex;"><span>$ ls -la vm_state.bin
+</span></span><span style="display:flex;"><span>-rw-r--r-- <span style="color:#ae81ff">1</span> user user <span style="color:#ae81ff">21088</span> ...   <span style="color:#75715e"># 0x5260 = 21088 bytes</span>
+</span></span></code></pre></div><blockquote>
+<p>⚠️ The <code>catch syscall</code> fires on both entry and exit. The first hit (on entry) has the memory still mapped; the second (on exit) hits <code>Cannot access memory</code>. Detach after the first match.
+⚠️ Running this as root will write the persistence files. Run as a normal user, or <code>chmod</code> <code>/etc/cron.d</code> and <code>/etc/systemd/system</code> to be safe.</p>
+</blockquote>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/9.png" alt="9">
+    
+  </div>
+</div>
+
+<p>Now extract the flag. Naively packing bits gives <code>HTB{TH15_TH3_END_0R_WH4T}}</code>, note the <strong>extra <code>}</code></strong> at the end. That&rsquo;s because the magnitude check writes a <code>1</code> wherever the spectrum exceeds threshold, including a handful of false-positive bins past the flag&rsquo;s last bit (the spectrum has DC leakage and harmonics). A safer extraction is to look for <code>HTB{…}</code> with a regex, or to stop at the closing brace:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> re
+</span></span><span style="display:flex;"><span>buf  <span style="color:#f92672">=</span> open(<span style="color:#e6db74">&#39;vm_state.bin&#39;</span>,<span style="color:#e6db74">&#39;rb&#39;</span>)<span style="color:#f92672">.</span>read()
+</span></span><span style="display:flex;"><span>bits <span style="color:#f92672">=</span> buf[<span style="color:#ae81ff">0x5054</span>:<span style="color:#ae81ff">0x5260</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>out <span style="color:#f92672">=</span> bytearray()
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> range(<span style="color:#ae81ff">0</span>, len(bits) <span style="color:#f92672">//</span> <span style="color:#ae81ff">8</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">8</span>, <span style="color:#ae81ff">8</span>):
+</span></span><span style="display:flex;"><span>    byte <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> j <span style="color:#f92672">in</span> range(<span style="color:#ae81ff">8</span>):
+</span></span><span style="display:flex;"><span>        byte <span style="color:#f92672">=</span> (byte <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">|</span> (<span style="color:#ae81ff">1</span> <span style="color:#66d9ef">if</span> bits[i<span style="color:#f92672">+</span>j] <span style="color:#66d9ef">else</span> <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    out<span style="color:#f92672">.</span>append(byte)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>m <span style="color:#f92672">=</span> re<span style="color:#f92672">.</span>search(<span style="color:#e6db74">rb</span><span style="color:#e6db74">&#39;HTB\{[^}]*\}&#39;</span>, bytes(out))
+</span></span><span style="display:flex;"><span>print(m<span style="color:#f92672">.</span>group()<span style="color:#f92672">.</span>decode() <span style="color:#66d9ef">if</span> m <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;no flag found&#34;</span>)
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>HTB{TH15_TH3_END_0R_WH4T}
+</span></span></code></pre></div>
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/sysprob_reverse/10.png" alt="10">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="reflection---what-made-this-fun">Reflection - what made this fun</h1>
+<p>Five payload layers, three smokescreens:</p>
+<table>
+<thead>
+<tr>
+<th>Smokescreen</th>
+<th>Reality</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&ldquo;Diagnostics utility&rdquo; with usage text in <code>.rodata</code></td>
+<td>Never executed</td>
+</tr>
+<tr>
+<td>Outer <code>main</code> at <code>0x10a0</code></td>
+<td>Never reached (ELF entry is <code>0x804a55</code>)</td>
+</tr>
+<tr>
+<td><code>[sysprobe] beacon active</code> / persistence / C2 lines</td>
+<td>Misdirection from the VM - printed before the real work, so analysts spend hours hunting &ldquo;the C2&rdquo;</td>
+</tr>
+</tbody>
+</table>
+<p>…layered over the real chain: outer ELF → hidden RWE segment → DEFLATE-packed nested ELF → XOR-deobfuscated bytecode → stack VM → DFT magnitude check → bitmap → flag.</p>
+<p>Things to lift from this for similar challenges:</p>
+<ul>
+<li><strong>Entry point can lie outside <code>.text</code>.</strong> Always cross-check <code>readelf -h</code> (entry) against <code>readelf -l</code> (program headers), not against the section table. PIE makes the addresses look weird but the segment is exactly where program headers say it is.</li>
+<li><strong>Sections are advisory; segments are gospel.</strong> If <code>objdump -d</code> shows almost nothing, it&rsquo;s because <code>objdump</code> only walks sections. Loaders only walk segments. The gap is your hiding place.</li>
+<li><strong><code>.bss</code>-sized opcodes are nothing; XOR-stream constants are everything.</strong> A 62-byte program with no constants stored inline is enough to drive 4 KB of FFT scratch and produce a 200-bit answer. Don&rsquo;t measure complexity in bytecode length.</li>
+<li><strong>Trust the symbols you&rsquo;re given.</strong> Whoever wrote this left <code>payload.bin</code> unstripped. Take the gift, read the function names, save your day.</li>
+<li><strong>Misdirection is a feature.</strong> The &ldquo;malware&rdquo; theme isn&rsquo;t there to scare you - it&rsquo;s there to make you <code>strace</code> instead of disassemble, look for a C2 IP instead of an opcode table, file an incident report instead of solving a puzzle.</li>
+</ul>
+
+        </section>
+        <div class="post-tags">
+          
+          
+          <nav class="nav tags">
+            <ul class="tags">
+              
+              <li><a href="../../tags/reverse-engineering">reverse-engineering</a></li>
+              
+              <li><a href="../../tags/virtual-machine">virtual-machine</a></li>
+              
+              <li><a href="../../tags/bytecode">bytecode</a></li>
+              
+              <li><a href="../../tags/elf">elf</a></li>
+              
+              <li><a href="../../tags/packer">packer</a></li>
+              
+              <li><a href="../../tags/dft">dft</a></li>
+              
+              <li><a href="../../tags/signal-processing">signal-processing</a></li>
+              
+              <li><a href="../../tags/binary-analysis">binary-analysis</a></li>
+              
+              <li><a href="../../tags/anti-analysis">anti-analysis</a></li>
+              
+              <li><a href="../../tags/ctf">ctf</a></li>
+              
+              <li><a href="../../tags/hack-the-box">hack-the-box</a></li>
+              
+              <li><a href="../../tags/ida-pro">ida-pro</a></li>
+              
+              <li><a href="../../tags/ghidra">ghidra</a></li>
+              
+              <li><a href="../../tags/gdb">gdb</a></li>
+              
+              <li><a href="../../tags/x86-64">x86-64</a></li>
+              
+            </ul>
+          </nav>
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2026  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+</div>
+    </body>
+</html>

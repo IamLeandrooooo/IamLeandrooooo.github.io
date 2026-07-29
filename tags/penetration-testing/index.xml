@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Penetration Testing on Leandro&#39;s Code Cave</title>
+    <link>https://iamleandrooooo.github.io/tags/penetration-testing/</link>
+    <description>Recent content in Penetration Testing on Leandro&#39;s Code Cave</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 12 Sep 2025 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://iamleandrooooo.github.io/tags/penetration-testing/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Automating SQL Server Linked-Server Password Recovery with PowerShell</title>
+      <link>https://iamleandrooooo.github.io/posts/sqlserverlinkedserverspasswords/</link>
+      <pubDate>Fri, 12 Sep 2025 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/posts/sqlserverlinkedserverspasswords/</guid>
+      <description>SQL Server Linked Server Passwords ⚠️ Disclaimer: Legal Use Only&#xA;This script is provided solely for legal purposes. Any use of this script for illegal activities or in violation of applicable laws is strictly prohibited.&#xA;I take no responsibility if:&#xA;You use this script for unlawful purposes. You encounter any legal consequences as a result of using this script inappropriately. This whole script can be broken down into 4 steps. The first step is enabling TCP/IP connections on all SQL Server Instances.</description>
+    </item>
+  </channel>
+</rss>

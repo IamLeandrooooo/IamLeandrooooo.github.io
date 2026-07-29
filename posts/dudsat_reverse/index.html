@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html><head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Dudsat - Reversing a Doppler-Disguised Permutation Cipher - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Reverse engineering write-up for the HTB challenge &#34;rev_dudsat&#34; - recovering a flag hidden in the residuals of satellite telemetry by reconstructing a permutation table built at process startup." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="https://iamleandrooooo.github.io/posts/dudsat_reverse/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="Dudsat - Reversing a Doppler-Disguised Permutation Cipher">
+  <meta property="og:description" content="Reverse engineering write-up for the HTB challenge &#34;rev_dudsat&#34; - recovering a flag hidden in the residuals of satellite telemetry by reconstructing a permutation table built at process startup.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-05-20T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-05-20T00:00:00+00:00">
+    <meta property="article:tag" content="Reverse-Engineering">
+    <meta property="article:tag" content="Binary-Analysis">
+    <meta property="article:tag" content="Signal-Processing">
+    <meta property="article:tag" content="Telemetry">
+    <meta property="article:tag" content="Permutation-Cipher">
+    <meta property="article:tag" content="Anti-Debug">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Dudsat - Reversing a Doppler-Disguised Permutation Cipher">
+  <meta name="twitter:description" content="Reverse engineering write-up for the HTB challenge &#34;rev_dudsat&#34; - recovering a flag hidden in the residuals of satellite telemetry by reconstructing a permutation table built at process startup.">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="../../">Home</a>
+		
+		<a href="../../posts">All posts</a>
+		
+		<a href="../../about">About</a>
+		
+		<a href="../../tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">Dudsat - Reversing a Doppler-Disguised Permutation Cipher</h1>
+          <div class="meta">Posted on May 20, 2026</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          A stripped ELF reads 48-byte telemetry packets and computes a &#34;Doppler residual&#34; for each one. The integer part of that residual indexes a 256-byte permutation table built before main() by an .init_array constructor seeded with a Numerical Recipes LCG. One byte per packet, 26 packets, one flag.
+        </div>
+        <section class="body">
+          <h1 id="challenge-description">Challenge Description</h1>
+<p><strong>Category:</strong> Reverse Engineering</p>
+<p><strong>Difficulty:</strong> 🟡 Medium</p>
+<blockquote>
+<p>Networks trust its timing. So does a clearing system that moves money across four countries. Six weeks ago someone quietly bought ORBIT-9. Last week the clearing system froze for eleven hours. Yesterday a regional airport logged position drift during a HELIOS-7 pass. Not accidents. Tests. A burned asset codenamed FERRYMAN pulled one file off an ORBIT-9 maintenance laptop before going dark. A binary, <code>lbproc</code>, described internally as a link budget validation tool. Along with it: fourteen minutes of raw observation data from HELIOS-7&rsquo;s last contact window. FERRYMAN&rsquo;s final transmission was five words. <em>The numbers are not noise.</em> You have the binary. You have the log. The ground station is offline and the window is closing.</p>
+</blockquote>
+<p>We get two files: a stripped ELF named <code>lbproc</code> and a binary log <code>comms.dat</code>. The &ldquo;five words&rdquo; line is the hint - the telemetry math is doing more than it admits.</p>
+<hr>
+<h1 id="tldr">TL;DR</h1>
+<ul>
+<li>48-byte telemetry packets in <code>comms.dat</code> (26 of them)</li>
+<li>Each packet has a carrier <code>v</code>, a frequency-like field <code>f</code>, a measured value <code>m</code>, plus signal/SNR thresholds</li>
+<li>The binary computes <code>residual = m − (f / 418229116 + 1.0) × v</code> for every packet</li>
+<li>The integer part of that residual (mod 256) indexes a permutation table at <code>.bss:0x4040c0</code></li>
+<li>The table is built <strong>before <code>main</code></strong> by an <code>.init_array</code> constructor, using a Fisher–Yates shuffle keyed by the classic Numerical Recipes LCG (seed <code>0x20FC8</code>)</li>
+<li>The LOCK / NO-LOCK status printed by the binary is <strong>misdirection</strong> - every packet contributes a byte</li>
+<li>Concatenating the 26 looked-up bytes gives the flag</li>
+</ul>
+<hr>
+<h1 id="initial-triage">Initial Triage</h1>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>file lbproc
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>lbproc: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked,
+</span></span><span style="display:flex;"><span>        interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=6e41d29...,
+</span></span><span style="display:flex;"><span>        for GNU/Linux 3.2.0, stripped
+</span></span></code></pre></div>
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/1.png" alt="1">
+    
+  </div>
+</div>
+
+<p>Stripped, dynamically linked, x86-64.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>checksec --file<span style="color:#f92672">=</span>lbproc
+</span></span></code></pre></div>
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/2.png" alt="2">
+    
+  </div>
+</div>
+
+<p>A first run gives clean satellite-style telemetry output:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>./lbproc comms.dat
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>ORBIT-9 Solutions - Link Budget Processor v4.1.2
+</span></span><span style="display:flex;"><span>Contact window analysis: comms.dat
+</span></span><span style="display:flex;"><span>---------------------------------------------------
+</span></span><span style="display:flex;"><span>[2024-03-15T01:52:33Z] window=001  f0= 8025.000 MHz  status=NO-LOCK
+</span></span><span style="display:flex;"><span>[2024-03-15T01:52:47Z] window=002  f0= 8025.000 MHz  status=LOCK
+</span></span><span style="display:flex;"><span>[2024-03-15T01:53:01Z] window=003  f0= 8025.000 MHz  status=LOCK
+</span></span><span style="display:flex;"><span>... (24 more windows) ...
+</span></span><span style="display:flex;"><span>[2024-03-15T01:58:23Z] window=026  f0= 8025.000 MHz  status=NO-LOCK
+</span></span><span style="display:flex;"><span>---------------------------------------------------
+</span></span><span style="display:flex;"><span>Processed 26 windows. 24 acquired, 2 lost.
+</span></span></code></pre></div><p>26 windows in, 26 status lines out. No flag printed. No <code>HTB{</code> anywhere visible. The interesting state is internal, we need to look inside.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/3.png" alt="3">
+    
+  </div>
+</div>
+
+<p>A <code>strings lbproc | grep -i flag</code> returns nothing. <code>strings lbproc | grep HTB</code> also nothing. The flag is computed, not stored.</p>
+<hr>
+<h1 id="mapping-the-binary">Mapping the Binary</h1>
+<p>Loading <code>lbproc</code> into IDA (or Ghidra, or <code>objdump -d</code> for the patient) and looking at the function list reveals very few real functions, the binary is small.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-gdscript3" data-lang="gdscript3"><span style="display:flex;"><span><span style="color:#ae81ff">0x4011b0</span>   <span style="color:#f92672">&lt;</span>unnamed<span style="color:#f92672">&gt;</span>     <span style="color:#960050;background-color:#1e0010">←</span> called from <span style="color:#f92672">.</span>init_array
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x401220</span>   main          <span style="color:#960050;background-color:#1e0010">←</span> entry point, called by __libc_start_main
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x401520</span>   _start
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x4015d0</span>   __do_global_dtors_aux
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x401590</span>   __do_global_dtors_aux (variant)
+</span></span></code></pre></div><p>The first thing worth noting: there are <strong>two</strong> entries in <code>.init_array</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>readelf -d lbproc | grep INIT_ARRAY
+</span></span><span style="display:flex;"><span>objdump -s -j .init_array lbproc
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>Contents of section .init_array:
+</span></span><span style="display:flex;"><span> 403e08 00164000 00000000 b0114000 00000000   ..@.......@.....
+</span></span></code></pre></div><p>That&rsquo;s <code>0x401600</code> and <code>0x4011b0</code>. The first is the standard <code>frame_dummy</code>. The second is a custom constructor that runs <strong>before <code>main</code></strong>, and in a binary this small, that&rsquo;s where I&rsquo;d hide setup logic I don&rsquo;t want sitting in plain sight inside <code>main</code>.</p>
+<p>Hold that thought.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/4.png" alt="4">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="reading-main">Reading <code>main</code></h1>
+<p><code>main</code> lives at <code>0x401220</code>. Decompiled, the structure is roughly:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">int</span> argc, <span style="color:#66d9ef">char</span> <span style="color:#f92672">**</span>argv) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">ptrace</span>(PTRACE_TRACEME, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>) <span style="color:#f92672">==</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">fwrite</span>(<span style="color:#e6db74">&#34;lbproc: calibration check failed</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">33</span>, stderr);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">2</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (argc <span style="color:#f92672">!=</span> <span style="color:#ae81ff">2</span>) { <span style="color:#75715e">/* usage + return 1 */</span> }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    FILE <span style="color:#f92672">*</span>fp <span style="color:#f92672">=</span> <span style="color:#a6e22e">fopen</span>(argv[<span style="color:#ae81ff">1</span>], <span style="color:#e6db74">&#34;rb&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>fp) { <span style="color:#a6e22e">perror</span>(<span style="color:#e6db74">&#34;...&#34;</span>); <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">1</span>; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;ORBIT-9 Solutions - Link Budget Processor v4.1.2&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">printf</span>(<span style="color:#e6db74">&#34;Contact window analysis: %s</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, argv[<span style="color:#ae81ff">1</span>]);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;---------------------------------------------------&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> acquired <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, total <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> buf[<span style="color:#ae81ff">0x30</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">fread</span>(buf, <span style="color:#ae81ff">0x30</span>, <span style="color:#ae81ff">1</span>, fp) <span style="color:#f92672">==</span> <span style="color:#ae81ff">1</span>) {
+</span></span><span style="display:flex;"><span>        total<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// ... parse fields, compute residual, decide LOCK / NO-LOCK ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// ... printf telemetry line ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">if</span> (locked) acquired<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;---------------------------------------------------&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">printf</span>(<span style="color:#e6db74">&#34;Processed %d windows. %d acquired, %d lost.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>,
+</span></span><span style="display:flex;"><span>           total, acquired, total <span style="color:#f92672">-</span> acquired);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">fclose</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Three things jump out:</p>
+<ol>
+<li><strong>Anti-debug.</strong> <code>ptrace(PTRACE_TRACEME, ...)</code>. If a debugger is already attached when this runs, ptrace returns <code>-1</code> and the binary exits with <code>&quot;calibration check failed&quot;</code>. Disguised nicely as a calibration error.</li>
+<li><strong>Fixed-size records.</strong> <code>fread(buf, 0x30, 1, fp)</code> - packets are exactly <strong>48 bytes</strong>.</li>
+<li><strong>One byte is computed per packet but never printed.</strong> The format string is <code>&quot;[%s] window=%03u  f0=%9.3f MHz  status=%s\n&quot;</code>, it uses only the timestamp, window index, frequency, and status. The &ldquo;hidden&rdquo; byte is computed, stored on the stack, and… that&rsquo;s it.</li>
+</ol>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/5.png" alt="5">
+    
+  </div>
+</div>
+
+<h2 id="defeating-the-ptrace-check">Defeating the ptrace check</h2>
+<p>The check happens <em>exactly once</em>, at the very top of <code>main</code>. There are several easy ways past it:</p>
+<ul>
+<li><strong>NOP it:</strong> patch <code>call ptrace@plt</code> (5 bytes at <code>0x401252</code>) to <code>nop</code>s, or short-circuit the <code>je</code> at <code>0x40125b</code>.</li>
+<li><strong><code>LD_PRELOAD</code> a stub</strong> that makes <code>ptrace</code> return 0.</li>
+<li><strong>Break <em>before</em> it.</strong> Set the GDB breakpoint at the very first instruction of <code>main</code> (<code>0x401220</code>), inspect what you need, then detach. This is what I&rsquo;ll do below for the table dump, it&rsquo;s the least invasive.</li>
+<li>Or just use IDA to patch the instruction and save it.</li>
+</ul>
+<p>If you follow the IDA route, you should do the following. Start by identifying the condition that we you to change:</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/6_1.png" alt="6">
+    
+  </div>
+</div>
+
+<p>Then patch from JZ to JNZ with IDA:</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/6_2.png" alt="6">
+    
+  </div>
+</div>
+
+<p>And now, you don&rsquo;t have to worry with PTRACE again(Don&rsquo;t forget to save the patched binary btw):
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/6_3.png" alt="6">
+    
+  </div>
+</div>
+</p>
+<hr>
+<h1 id="the-residual-computation">The Residual Computation</h1>
+<p>Zooming into the hot block of the loop (around <code>0x401322</code>–<code>0x40137d</code>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">401322:</span>  <span style="color:#a6e22e">movsd</span>  <span style="color:#ae81ff">0x30</span>(%rsp),%xmm1         <span style="color:#75715e">; xmm1 = packet[0x10]   → call this &#39;f&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401328:</span>  <span style="color:#a6e22e">divsd</span>  <span style="color:#ae81ff">0xe58</span>(%rip),%xmm1        <span style="color:#75715e">;   /= [0x402188]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401330:</span>  <span style="color:#a6e22e">addsd</span>  <span style="color:#ae81ff">0xe58</span>(%rip),%xmm1        <span style="color:#75715e">;   += [0x402190]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401338:</span>  <span style="color:#a6e22e">movsd</span>  <span style="color:#ae81ff">0x38</span>(%rsp),%xmm2         <span style="color:#75715e">; xmm2 = packet[0x18]   → &#39;m&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401357:</span>  <span style="color:#a6e22e">movsd</span>  <span style="color:#ae81ff">0x28</span>(%rsp),%xmm0         <span style="color:#75715e">; xmm0 = packet[0x08]   → &#39;v&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40136</span>a:  <span style="color:#a6e22e">mulsd</span>  %xmm0,%xmm1              <span style="color:#75715e">; xmm1 = ((f / X) + Y) * v
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40136</span>e:  <span style="color:#a6e22e">subsd</span>  %xmm1,%xmm2              <span style="color:#75715e">; xmm2 = m − xmm1       ← RESIDUAL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401372:</span>  <span style="color:#a6e22e">cvttsd2si</span> %xmm2,%eax            <span style="color:#75715e">; eax = (int)residual
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401376:</span>  <span style="color:#a6e22e">movzbl</span> %al,%eax                 <span style="color:#75715e">;     &amp;= 0xff
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401379:</span>  <span style="color:#a6e22e">movzbl</span> (%rdx,%rax,<span style="color:#ae81ff">1</span>),%eax       <span style="color:#75715e">; eax = table[index]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40137</span>d:  <span style="color:#a6e22e">mov</span>    %al,<span style="color:#ae81ff">0x7</span>(%rsp)            <span style="color:#75715e">; stash byte on stack - never used again
+</span></span></span></code></pre></div><p>So the hidden byte for each packet is:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>byte = table[ (int)(m − (f / X + Y) × v)  &amp;  0xff ]
+</span></span></code></pre></div><p>where <code>%rdx</code> was just loaded with <code>lea 0x2d7b(%rip),%rdx</code> → <code>0x4040c0</code> (the table address).</p>
+<p>The constants <code>X</code> and <code>Y</code> are at <code>0x402188</code> and <code>0x402190</code> respectively. Reading <code>.rodata</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> struct
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#39;lbproc&#39;</span>,<span style="color:#e6db74">&#39;rb&#39;</span>) <span style="color:#66d9ef">as</span> f: d<span style="color:#f92672">=</span>f<span style="color:#f92672">.</span>read()
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">cd</span>(va, n<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span>): <span style="color:#66d9ef">return</span> struct<span style="color:#f92672">.</span>unpack(<span style="color:#e6db74">&#39;&lt;d&#39;</span>, d[va<span style="color:#f92672">-</span><span style="color:#ae81ff">0x402000</span><span style="color:#f92672">+</span><span style="color:#ae81ff">0x2000</span>:][:n])[<span style="color:#ae81ff">0</span>]
+</span></span><span style="display:flex;"><span>print(cd(<span style="color:#ae81ff">0x402180</span>))   <span style="color:#75715e"># 299792458.0</span>
+</span></span><span style="display:flex;"><span>print(cd(<span style="color:#ae81ff">0x402188</span>))   <span style="color:#75715e"># 418229116.0</span>
+</span></span><span style="display:flex;"><span>print(cd(<span style="color:#ae81ff">0x402190</span>))   <span style="color:#75715e"># 1.0</span>
+</span></span><span style="display:flex;"><span>print(cd(<span style="color:#ae81ff">0x402198</span>))   <span style="color:#75715e"># 5000.0</span>
+</span></span></code></pre></div><p>There are <strong>two</strong> numeric constants in the area worth noting:</p>
+<table>
+<thead>
+<tr>
+<th>Address</th>
+<th>Value</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0x402180</code></td>
+<td><code>299792458.0</code></td>
+<td>Speed of light - loaded into <code>rax</code>, then <strong>never used</strong>. Pure scenery.</td>
+</tr>
+<tr>
+<td><code>0x402188</code></td>
+<td><code>418229116.0</code></td>
+<td>The actual divisor in the residual formula.</td>
+</tr>
+<tr>
+<td><code>0x402190</code></td>
+<td><code>1.0</code></td>
+<td>Additive constant.</td>
+</tr>
+<tr>
+<td><code>0x402198</code></td>
+<td><code>5000.0</code></td>
+<td>Threshold on `</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚠️ <strong>Gotcha worth calling out for anyone following along.</strong> The value <code>c = 299792458.0</code> (speed of light) is loaded into <code>rax</code> at <code>0x40131b</code> and then <em>clobbered</em> without being read — it&rsquo;s a red herring. The instruction sequence is <code>mov 0x402180→rax; ... mov rax,0x18(rsp); movsd 0x18(rsp)→xmm0; movsd packet[0x08]→xmm0</code>, the last write to <code>xmm0</code> overwrites it before any use. If you skim and assume &ldquo;speed of light therefore Doppler shift,&rdquo; you&rsquo;ll plug <code>299792458</code> into the formula and your residuals will come out around <code>−50000</code> instead of <code>+50</code> — and <em>no</em> packet will look like a LOCK. (Don&rsquo;t ask me how I know.)</p>
+</blockquote>
+<h2 id="packet-layout-decoded">Packet layout, decoded</h2>
+<p>By staring at register usage and a hex dump of the first few packets, the 48-byte record falls out:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-gdscript3" data-lang="gdscript3"><span style="display:flex;"><span>offset  size  type    meaning
+</span></span><span style="display:flex;"><span><span style="color:#f92672">------</span>  <span style="color:#f92672">----</span>  <span style="color:#f92672">------</span>  <span style="color:#f92672">------------------------------------------------</span>
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x00</span>    <span style="color:#ae81ff">8</span>     int64   unix timestamp
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x08</span>    <span style="color:#ae81ff">8</span>     double  v   <span style="color:#f92672">-</span> carrier frequency (<span style="color:#960050;background-color:#1e0010">≈</span> <span style="color:#ae81ff">8.025e9</span>, the <span style="color:#e6db74">&#34;f0&#34;</span> printed)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x10</span>    <span style="color:#ae81ff">8</span>     double  f   <span style="color:#f92672">-</span> Doppler<span style="color:#f92672">-</span>ish offset (small, <span style="color:#f92672">~</span>thousands)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x18</span>    <span style="color:#ae81ff">8</span>     double  m   <span style="color:#f92672">-</span> measured <span style="color:#f92672">/</span> observed frequency
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x20</span>    <span style="color:#ae81ff">4</span>     <span style="color:#a6e22e">float</span>   <span style="color:#66d9ef">signal</span> level  (gated against <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">5.0</span>)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x24</span>    <span style="color:#ae81ff">4</span>     <span style="color:#a6e22e">float</span>   SNR           (gated against <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">12.0</span>)
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x28</span>    <span style="color:#ae81ff">4</span>     uint32  window index
+</span></span><span style="display:flex;"><span><span style="color:#ae81ff">0x2C</span>    <span style="color:#ae81ff">4</span>     <span style="color:#f92672">-</span>       padding
+</span></span></code></pre></div><p>Quick sanity check on packet 1:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> struct
+</span></span><span style="display:flex;"><span>p <span style="color:#f92672">=</span> open(<span style="color:#e6db74">&#39;comms.dat&#39;</span>,<span style="color:#e6db74">&#39;rb&#39;</span>)<span style="color:#f92672">.</span>read()[:<span style="color:#ae81ff">0x30</span>]
+</span></span><span style="display:flex;"><span>ts, v, f, m <span style="color:#f92672">=</span> struct<span style="color:#f92672">.</span>unpack_from(<span style="color:#e6db74">&#39;&lt;qddd&#39;</span>, p, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>print(v, f, m)
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 8025000000.0  6800.0  8025130528.450034</span>
+</span></span><span style="display:flex;"><span>print((f<span style="color:#f92672">/</span><span style="color:#ae81ff">418229116</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> v)
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 8025130478.72... → residual ≈ +49.73   ✓ matches GDB</span>
+</span></span></code></pre></div><p>That <code>v = 8.025e9</code> lines up exactly with the <code>f0= 8025.000 MHz</code> the binary prints. Good, the layout is right.</p>
+<hr>
+<h1 id="the-lock-gating-is-misdirection">The LOCK Gating Is Misdirection</h1>
+<p>After the residual is computed, three checks determine LOCK vs NO-LOCK:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">40135</span>d:  <span style="color:#a6e22e">movss</span>  [<span style="color:#ae81ff">0x4021a8</span>],%xmm3      <span style="color:#75715e">; 5.0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401365:</span>  <span style="color:#a6e22e">comiss</span> <span style="color:#ae81ff">0x40</span>(%rsp),%xmm3       <span style="color:#75715e">; signal vs 5.0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401386:</span>  <span style="color:#a6e22e">ja</span>     <span style="color:#ae81ff">0x4013b2</span>               <span style="color:#75715e">;   if 5.0 &gt; signal: NO-LOCK
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401388:</span>  <span style="color:#a6e22e">movss</span>  [<span style="color:#ae81ff">0x4021ac</span>],%xmm1      <span style="color:#75715e">; 12.0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401390:</span>  <span style="color:#a6e22e">comiss</span> <span style="color:#ae81ff">0x44</span>(%rsp),%xmm1       <span style="color:#75715e">; SNR vs 12.0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401395:</span>  <span style="color:#a6e22e">ja</span>     <span style="color:#ae81ff">0x4013b2</span>               <span style="color:#75715e">;   if 12.0 &gt; SNR:  NO-LOCK
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401397:</span>  <span style="color:#a6e22e">andpd</span>  [<span style="color:#ae81ff">0x4021b0</span>],%xmm2       <span style="color:#75715e">; |residual|
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40139</span>f:  <span style="color:#a6e22e">comisd</span> [<span style="color:#ae81ff">0x402198</span>],%xmm2       <span style="color:#75715e">; |residual| vs 5000.0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4013</span>ae:  <span style="color:#a6e22e">cmovbe</span> %rax,%r8                <span style="color:#75715e">; if &lt;= 5000.0:    &#34;LOCK&#34;
+</span></span></span></code></pre></div><p>So <strong>LOCK</strong> ⇔ <code>signal ≥ 5.0</code> ∧ <code>SNR ≥ 12.0</code> ∧ <code>|residual| ≤ 5000.0</code>.</p>
+<p>It looks load-bearing. It isn&rsquo;t. The byte at <code>byte = table[int(residual) &amp; 0xff]</code> is computed <strong>before</strong> these checks and <strong>regardless of</strong> their outcome - the checks only affect which string (<code>&quot;LOCK&quot;</code> or <code>&quot;NO-LOCK&quot;</code>) is passed to <code>printf</code>. The hidden byte is collected from <strong>every</strong> packet, including the two NO-LOCKs.</p>
+<p>This matters because the first packet (window 1) has <code>signal = 0.0</code> and the last (window 26) has degraded <code>signal</code>/<code>snr</code>. Both yield NO-LOCK. If you naively filter to LOCKed packets only, you lose the <code>H</code> and the <code>}</code> and end up with <code>TB{d0ppl3r_p3rm_l34k_h7b</code> - close enough to look right, frustrating enough to waste an hour wondering why it&rsquo;s broken.</p>
+<blockquote>
+<p>⚠️ The &ldquo;lock state&rdquo; is <em>flavor text</em> - useful storytelling, not a filter.</p>
+</blockquote>
+<hr>
+<h1 id="the-permutation-table">The Permutation Table</h1>
+<p><code>%rdx = 0x4040c0</code> is the lookup base. That address is in <code>.bss</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>readelf -S lbproc | grep -E <span style="color:#e6db74">&#39;bss|data&#39;</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>[25] .data    PROGBITS  0000000000404078  00003078
+</span></span><span style="display:flex;"><span>[26] .bss     NOBITS    00000000004040a0  00003088
+</span></span></code></pre></div><p><code>.bss</code> starts at <code>0x4040a0</code>, and our table at <code>0x4040c0</code> sits <code>0x20</code> bytes in. <code>.bss</code> is zero-initialised at load - so the table must be <strong>populated at runtime</strong>. Back to that suspicious <code>.init_array</code> entry at <code>0x4011b0</code>.</p>
+<h2 id="phase-1---identity-init">Phase 1 - identity init</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>b0:  <span style="color:#a6e22e">endbr64</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>b4:  <span style="color:#a6e22e">xor</span>    %eax,%eax
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>b6:  <span style="color:#a6e22e">lea</span>    <span style="color:#ae81ff">0x2f03</span>(%rip),%rdi        <span style="color:#75715e"># 0x4040c0   ← the table
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>c0:  <span style="color:#a6e22e">mov</span>    %al,(%rdi,%rax,<span style="color:#ae81ff">1</span>)        <span style="color:#75715e">; table[i] = (uint8_t)i
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>c3:  <span style="color:#a6e22e">add</span>    <span style="color:#66d9ef">$0x1</span>,%rax
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>c7:  <span style="color:#a6e22e">cmp</span>    <span style="color:#66d9ef">$0x100</span>,%rax
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>cd:  <span style="color:#a6e22e">jne</span>    <span style="color:#ae81ff">0x4011c0</span>
+</span></span></code></pre></div><p>Standard identity fill: <code>for i in 0..255: table[i] = i</code>.</p>
+<h2 id="phase-2---fisher-yates-with-a-numerical-recipes-lcg">Phase 2 - Fisher-Yates with a Numerical Recipes LCG</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-asm" data-lang="asm"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>cf:  <span style="color:#a6e22e">lea</span>    <span style="color:#ae81ff">0x2fe9</span>(%rip),%rcx        <span style="color:#75715e"># 0x4041bf   ← &amp;table[255]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>d6:  <span style="color:#a6e22e">mov</span>    <span style="color:#66d9ef">$0x100</span>,%r9d
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">4011</span>dc:  <span style="color:#a6e22e">mov</span>    <span style="color:#66d9ef">$0x20fc8</span>,%esi            <span style="color:#75715e">;             ← LCG seed
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>e1:  <span style="color:#a6e22e">sub</span>    %ecx,%r9d                <span style="color:#75715e">;   r9d = 0x100 − low32(rcx)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>e8:  <span style="color:#a6e22e">imul</span>   <span style="color:#66d9ef">$0x19660d</span>,%esi,%esi      <span style="color:#75715e">; ┐
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>ee:  <span style="color:#a6e22e">lea</span>    (%r9,%rcx,<span style="color:#ae81ff">1</span>),%r8d        <span style="color:#75715e">; │ r8d = current range  (0x100 → 1)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>f2:  <span style="color:#a6e22e">xor</span>    %edx,%edx                <span style="color:#75715e">; │
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>f4:  <span style="color:#a6e22e">sub</span>    <span style="color:#66d9ef">$0x1</span>,%rcx                <span style="color:#75715e">; │ move pointer down
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>f8:  <span style="color:#a6e22e">add</span>    <span style="color:#66d9ef">$0x3c6ef35f</span>,%esi         <span style="color:#75715e">; │ LCG: esi = esi*0x19660D + 0x3C6EF35F
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">4011</span>fe:  <span style="color:#a6e22e">mov</span>    %esi,%eax                <span style="color:#75715e">; │
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401200:</span>  <span style="color:#a6e22e">div</span>    %r8d                     <span style="color:#75715e">; │ edx = esi mod range
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401203:</span>  <span style="color:#a6e22e">movzbl</span> <span style="color:#ae81ff">0x1</span>(%rcx),%eax           <span style="color:#75715e">; │ tmp = table[hi]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401207:</span>  <span style="color:#a6e22e">movslq</span> %edx,%rdx                <span style="color:#75715e">; │
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40120</span>a:  <span style="color:#a6e22e">movzbl</span> (%rdi,%rdx,<span style="color:#ae81ff">1</span>),%r8d       <span style="color:#75715e">; │ table[hi] = table[edx]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40120</span>f:  <span style="color:#a6e22e">mov</span>    %r8b,<span style="color:#ae81ff">0x1</span>(%rcx)           <span style="color:#75715e">; │ table[edx] = tmp
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401213:</span>  <span style="color:#a6e22e">mov</span>    %al,(%rdi,%rdx,<span style="color:#ae81ff">1</span>)        <span style="color:#75715e">; │      (i.e. swap)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401216:</span>  <span style="color:#a6e22e">cmp</span>    %rdi,%rcx                <span style="color:#75715e">; │
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">401219:</span>  <span style="color:#a6e22e">jne</span>    <span style="color:#ae81ff">0x4011e8</span>                 <span style="color:#75715e">; ┘
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#960050;background-color:#1e0010">40121</span>b:  <span style="color:#a6e22e">ret</span>
+</span></span></code></pre></div><p>That&rsquo;s a textbook Fisher–Yates shuffle. The PRNG is the famous <strong>Numerical Recipes</strong> linear congruential generator: <code>state ← state × 0x19660D + 0x3C6EF35F (mod 2^32)</code>. The seed is hard-coded as <code>0x20FC8</code>, which means the table is <strong>completely deterministic</strong>.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/7.png" alt="7">
+    
+  </div>
+</div>
+
+<h2 id="recovering-it---two-paths">Recovering it - two paths</h2>
+<h3 id="path-a-dump-it-live-from-a-running-process-fast">Path A: Dump it live from a running process (fast)</h3>
+<p>The <code>ptrace</code> check is at the <em>top of <code>main</code></em>, so the constructor at <code>0x4011b0</code> runs first - by the time <code>main</code> is entered, <code>0x4040c0</code> already contains the shuffled table. Break <strong>at the first instruction of <code>main</code></strong> (which is before the <code>ptrace</code> call) and read 256 bytes:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>gdb -batch <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    -ex <span style="color:#e6db74">&#39;break *0x401220&#39;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    -ex <span style="color:#e6db74">&#39;run comms.dat&#39;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    -ex <span style="color:#e6db74">&#39;x/256bx 0x4040c0&#39;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    -ex <span style="color:#e6db74">&#39;quit&#39;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    ./lbproc
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>0x4040c0: 0xea 0x96 0x00 0x06 0x40 0x42 0x5d 0xb2
+</span></span><span style="display:flex;"><span>0x4040c8: 0x4a 0x7c 0xc4 0x0d 0x98 0x58 0x62 0x75
+</span></span><span style="display:flex;"><span>0x4040d0: 0xca 0x20 0x0c 0x18 0x49 0x22 0xa1 0x80
+</span></span><span style="display:flex;"><span>... 30 more lines ...
+</span></span><span style="display:flex;"><span>0x4041b8: 0x78 0x73 0xc5 0x3f 0x86 0xd3 0x39 0x87
+</span></span></code></pre></div><blockquote>
+<p>⚠️ <strong>Don&rsquo;t</strong> break later than <code>0x401220</code>. <code>starti</code> stops in the loader before <code>.init_array</code> has fired (you&rsquo;ll dump all zeros). Anywhere past <code>0x401252</code> is after the ptrace check has triggered exit, so the process is gone.</p>
+</blockquote>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/8.png" alt="8">
+    
+  </div>
+</div>
+
+<h3 id="path-b-re-derive-it-statically-clean">Path B: Re-derive it statically (clean)</h3>
+<p>Because the seed and the LCG constants are baked in, we can re-run the exact same shuffle in Python and skip the binary entirely:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>MASK32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">0xFFFFFFFF</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Phase 1: identity</span>
+</span></span><span style="display:flex;"><span>table <span style="color:#f92672">=</span> list(range(<span style="color:#ae81ff">256</span>))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Phase 2: emulate the constructor exactly (registers tracked the asm way)</span>
+</span></span><span style="display:flex;"><span>BASE <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x4040c0</span>
+</span></span><span style="display:flex;"><span>END  <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x4041bf</span>                           <span style="color:#75715e"># &amp;table[0xff]</span>
+</span></span><span style="display:flex;"><span>rcx  <span style="color:#f92672">=</span> END
+</span></span><span style="display:flex;"><span>r9d  <span style="color:#f92672">=</span> (<span style="color:#ae81ff">0x100</span> <span style="color:#f92672">-</span> (rcx <span style="color:#f92672">&amp;</span> MASK32)) <span style="color:#f92672">&amp;</span> MASK32  <span style="color:#75715e"># so r9d + ecx = remaining range</span>
+</span></span><span style="display:flex;"><span>esi  <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x20FC8</span>                            <span style="color:#75715e"># LCG state</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> <span style="color:#66d9ef">True</span>:
+</span></span><span style="display:flex;"><span>    esi <span style="color:#f92672">=</span> (esi <span style="color:#f92672">*</span> <span style="color:#ae81ff">0x19660D</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">0x3C6EF35F</span>) <span style="color:#f92672">&amp;</span> MASK32
+</span></span><span style="display:flex;"><span>    r8d <span style="color:#f92672">=</span> (r9d <span style="color:#f92672">+</span> (rcx <span style="color:#f92672">&amp;</span> MASK32)) <span style="color:#f92672">&amp;</span> MASK32 <span style="color:#75715e"># shrinks 0x100 → 1 over the loop</span>
+</span></span><span style="display:flex;"><span>    rcx <span style="color:#f92672">-=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    edx <span style="color:#f92672">=</span> esi <span style="color:#f92672">%</span> r8d
+</span></span><span style="display:flex;"><span>    hi  <span style="color:#f92672">=</span> (rcx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">-</span> BASE
+</span></span><span style="display:flex;"><span>    table[hi], table[edx] <span style="color:#f92672">=</span> table[edx], table[hi]
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> rcx <span style="color:#f92672">==</span> BASE:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">assert</span> sorted(table) <span style="color:#f92672">==</span> list(range(<span style="color:#ae81ff">256</span>))  <span style="color:#75715e"># sanity: still a permutation</span>
+</span></span><span style="display:flex;"><span>print([hex(x) <span style="color:#66d9ef">for</span> x <span style="color:#f92672">in</span> table])
+</span></span></code></pre></div><p>The first 16 bytes of <code>table</code> come out to <code>ea 96 00 06 40 42 5d b2 4a 7c c4 0d 98 58 62 75</code> - byte-for-byte identical to the GDB dump. Two independent derivations agreeing is about as much confidence as you can get without patching the binary.</p>
+
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/9.png" alt="9">
+    
+  </div>
+</div>
+
+<p>For reference, the full table as a 16×16 grid:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>     00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+</span></span><span style="display:flex;"><span>00:  ea 96 00 06 40 42 5d b2 4a 7c c4 0d 98 58 62 75
+</span></span><span style="display:flex;"><span>10:  ca 20 0c 18 49 22 a1 80 14 0b 8e 76 e8 a8 1e c0
+</span></span><span style="display:flex;"><span>20:  cc 82 68 4e 9c 91 10 32 08 60 8c 36 3c 7e 6d 66
+</span></span><span style="display:flex;"><span>30:  51 48 43 fe 2c 64 99 f9 12 cf 34 3b 24 44 0a 6e
+</span></span><span style="display:flex;"><span>40:  1a 5c 38 da fd 50 04 b9 09 eb 94 a2 30 8a 69 d7
+</span></span><span style="display:flex;"><span>50:  e1 de 5a 5f 16 56 a4 37 25 45 0e 7b f0 e2 c9 e4
+</span></span><span style="display:flex;"><span>60:  6c f4 52 ee 70 c8 a0 f7 ce f5 be 0f 95 79 61 85
+</span></span><span style="display:flex;"><span>70:  cb ad 2b 9a 4d 81 9d ab f2 05 1c 83 11 b4 71 ff
+</span></span><span style="display:flex;"><span>80:  9e 15 2e d6 02 7f fc a7 2d 67 c2 bc 3e e5 4c d8
+</span></span><span style="display:flex;"><span>90:  e6 a5 63 13 54 9f 7a d4 f8 d2 4b e7 29 59 5e df
+</span></span><span style="display:flex;"><span>a0:  74 41 6b 1b 72 19 1f fa 3a ed ef c3 2a c1 90 ba
+</span></span><span style="display:flex;"><span>b0:  bb 31 93 dd 88 7d b8 b7 89 d9 d5 d1 a6 3d db 47
+</span></span><span style="display:flex;"><span>c0:  b0 e0 92 2f 26 07 1d af d0 b5 46 03 ae 8d c6 c7
+</span></span><span style="display:flex;"><span>d0:  bd 23 f6 e9 ec 77 53 dc 57 fb 6a 8b 17 33 01 f1
+</span></span><span style="display:flex;"><span>e0:  a9 9b 21 b3 aa 35 cd 8f ac a3 84 e3 6f 65 4f 97
+</span></span><span style="display:flex;"><span>f0:  b1 27 28 5b f3 55 b6 bf 78 73 c5 3f 86 d3 39 87
+</span></span></code></pre></div><hr>
+<h1 id="putting-it-together">Putting It Together</h1>
+<p>The full extractor reads each 48-byte record, replays the residual computation, mods to a table index, and looks up the byte:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">import</span> struct
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>perm <span style="color:#f92672">=</span> [  <span style="color:#75715e"># the table derived above</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xea</span>,<span style="color:#ae81ff">0x96</span>,<span style="color:#ae81ff">0x00</span>,<span style="color:#ae81ff">0x06</span>,<span style="color:#ae81ff">0x40</span>,<span style="color:#ae81ff">0x42</span>,<span style="color:#ae81ff">0x5d</span>,<span style="color:#ae81ff">0xb2</span>,<span style="color:#ae81ff">0x4a</span>,<span style="color:#ae81ff">0x7c</span>,<span style="color:#ae81ff">0xc4</span>,<span style="color:#ae81ff">0x0d</span>,<span style="color:#ae81ff">0x98</span>,<span style="color:#ae81ff">0x58</span>,<span style="color:#ae81ff">0x62</span>,<span style="color:#ae81ff">0x75</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xca</span>,<span style="color:#ae81ff">0x20</span>,<span style="color:#ae81ff">0x0c</span>,<span style="color:#ae81ff">0x18</span>,<span style="color:#ae81ff">0x49</span>,<span style="color:#ae81ff">0x22</span>,<span style="color:#ae81ff">0xa1</span>,<span style="color:#ae81ff">0x80</span>,<span style="color:#ae81ff">0x14</span>,<span style="color:#ae81ff">0x0b</span>,<span style="color:#ae81ff">0x8e</span>,<span style="color:#ae81ff">0x76</span>,<span style="color:#ae81ff">0xe8</span>,<span style="color:#ae81ff">0xa8</span>,<span style="color:#ae81ff">0x1e</span>,<span style="color:#ae81ff">0xc0</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xcc</span>,<span style="color:#ae81ff">0x82</span>,<span style="color:#ae81ff">0x68</span>,<span style="color:#ae81ff">0x4e</span>,<span style="color:#ae81ff">0x9c</span>,<span style="color:#ae81ff">0x91</span>,<span style="color:#ae81ff">0x10</span>,<span style="color:#ae81ff">0x32</span>,<span style="color:#ae81ff">0x08</span>,<span style="color:#ae81ff">0x60</span>,<span style="color:#ae81ff">0x8c</span>,<span style="color:#ae81ff">0x36</span>,<span style="color:#ae81ff">0x3c</span>,<span style="color:#ae81ff">0x7e</span>,<span style="color:#ae81ff">0x6d</span>,<span style="color:#ae81ff">0x66</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0x51</span>,<span style="color:#ae81ff">0x48</span>,<span style="color:#ae81ff">0x43</span>,<span style="color:#ae81ff">0xfe</span>,<span style="color:#ae81ff">0x2c</span>,<span style="color:#ae81ff">0x64</span>,<span style="color:#ae81ff">0x99</span>,<span style="color:#ae81ff">0xf9</span>,<span style="color:#ae81ff">0x12</span>,<span style="color:#ae81ff">0xcf</span>,<span style="color:#ae81ff">0x34</span>,<span style="color:#ae81ff">0x3b</span>,<span style="color:#ae81ff">0x24</span>,<span style="color:#ae81ff">0x44</span>,<span style="color:#ae81ff">0x0a</span>,<span style="color:#ae81ff">0x6e</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0x1a</span>,<span style="color:#ae81ff">0x5c</span>,<span style="color:#ae81ff">0x38</span>,<span style="color:#ae81ff">0xda</span>,<span style="color:#ae81ff">0xfd</span>,<span style="color:#ae81ff">0x50</span>,<span style="color:#ae81ff">0x04</span>,<span style="color:#ae81ff">0xb9</span>,<span style="color:#ae81ff">0x09</span>,<span style="color:#ae81ff">0xeb</span>,<span style="color:#ae81ff">0x94</span>,<span style="color:#ae81ff">0xa2</span>,<span style="color:#ae81ff">0x30</span>,<span style="color:#ae81ff">0x8a</span>,<span style="color:#ae81ff">0x69</span>,<span style="color:#ae81ff">0xd7</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xe1</span>,<span style="color:#ae81ff">0xde</span>,<span style="color:#ae81ff">0x5a</span>,<span style="color:#ae81ff">0x5f</span>,<span style="color:#ae81ff">0x16</span>,<span style="color:#ae81ff">0x56</span>,<span style="color:#ae81ff">0xa4</span>,<span style="color:#ae81ff">0x37</span>,<span style="color:#ae81ff">0x25</span>,<span style="color:#ae81ff">0x45</span>,<span style="color:#ae81ff">0x0e</span>,<span style="color:#ae81ff">0x7b</span>,<span style="color:#ae81ff">0xf0</span>,<span style="color:#ae81ff">0xe2</span>,<span style="color:#ae81ff">0xc9</span>,<span style="color:#ae81ff">0xe4</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0x6c</span>,<span style="color:#ae81ff">0xf4</span>,<span style="color:#ae81ff">0x52</span>,<span style="color:#ae81ff">0xee</span>,<span style="color:#ae81ff">0x70</span>,<span style="color:#ae81ff">0xc8</span>,<span style="color:#ae81ff">0xa0</span>,<span style="color:#ae81ff">0xf7</span>,<span style="color:#ae81ff">0xce</span>,<span style="color:#ae81ff">0xf5</span>,<span style="color:#ae81ff">0xbe</span>,<span style="color:#ae81ff">0x0f</span>,<span style="color:#ae81ff">0x95</span>,<span style="color:#ae81ff">0x79</span>,<span style="color:#ae81ff">0x61</span>,<span style="color:#ae81ff">0x85</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xcb</span>,<span style="color:#ae81ff">0xad</span>,<span style="color:#ae81ff">0x2b</span>,<span style="color:#ae81ff">0x9a</span>,<span style="color:#ae81ff">0x4d</span>,<span style="color:#ae81ff">0x81</span>,<span style="color:#ae81ff">0x9d</span>,<span style="color:#ae81ff">0xab</span>,<span style="color:#ae81ff">0xf2</span>,<span style="color:#ae81ff">0x05</span>,<span style="color:#ae81ff">0x1c</span>,<span style="color:#ae81ff">0x83</span>,<span style="color:#ae81ff">0x11</span>,<span style="color:#ae81ff">0xb4</span>,<span style="color:#ae81ff">0x71</span>,<span style="color:#ae81ff">0xff</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0x9e</span>,<span style="color:#ae81ff">0x15</span>,<span style="color:#ae81ff">0x2e</span>,<span style="color:#ae81ff">0xd6</span>,<span style="color:#ae81ff">0x02</span>,<span style="color:#ae81ff">0x7f</span>,<span style="color:#ae81ff">0xfc</span>,<span style="color:#ae81ff">0xa7</span>,<span style="color:#ae81ff">0x2d</span>,<span style="color:#ae81ff">0x67</span>,<span style="color:#ae81ff">0xc2</span>,<span style="color:#ae81ff">0xbc</span>,<span style="color:#ae81ff">0x3e</span>,<span style="color:#ae81ff">0xe5</span>,<span style="color:#ae81ff">0x4c</span>,<span style="color:#ae81ff">0xd8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xe6</span>,<span style="color:#ae81ff">0xa5</span>,<span style="color:#ae81ff">0x63</span>,<span style="color:#ae81ff">0x13</span>,<span style="color:#ae81ff">0x54</span>,<span style="color:#ae81ff">0x9f</span>,<span style="color:#ae81ff">0x7a</span>,<span style="color:#ae81ff">0xd4</span>,<span style="color:#ae81ff">0xf8</span>,<span style="color:#ae81ff">0xd2</span>,<span style="color:#ae81ff">0x4b</span>,<span style="color:#ae81ff">0xe7</span>,<span style="color:#ae81ff">0x29</span>,<span style="color:#ae81ff">0x59</span>,<span style="color:#ae81ff">0x5e</span>,<span style="color:#ae81ff">0xdf</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0x74</span>,<span style="color:#ae81ff">0x41</span>,<span style="color:#ae81ff">0x6b</span>,<span style="color:#ae81ff">0x1b</span>,<span style="color:#ae81ff">0x72</span>,<span style="color:#ae81ff">0x19</span>,<span style="color:#ae81ff">0x1f</span>,<span style="color:#ae81ff">0xfa</span>,<span style="color:#ae81ff">0x3a</span>,<span style="color:#ae81ff">0xed</span>,<span style="color:#ae81ff">0xef</span>,<span style="color:#ae81ff">0xc3</span>,<span style="color:#ae81ff">0x2a</span>,<span style="color:#ae81ff">0xc1</span>,<span style="color:#ae81ff">0x90</span>,<span style="color:#ae81ff">0xba</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xbb</span>,<span style="color:#ae81ff">0x31</span>,<span style="color:#ae81ff">0x93</span>,<span style="color:#ae81ff">0xdd</span>,<span style="color:#ae81ff">0x88</span>,<span style="color:#ae81ff">0x7d</span>,<span style="color:#ae81ff">0xb8</span>,<span style="color:#ae81ff">0xb7</span>,<span style="color:#ae81ff">0x89</span>,<span style="color:#ae81ff">0xd9</span>,<span style="color:#ae81ff">0xd5</span>,<span style="color:#ae81ff">0xd1</span>,<span style="color:#ae81ff">0xa6</span>,<span style="color:#ae81ff">0x3d</span>,<span style="color:#ae81ff">0xdb</span>,<span style="color:#ae81ff">0x47</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xb0</span>,<span style="color:#ae81ff">0xe0</span>,<span style="color:#ae81ff">0x92</span>,<span style="color:#ae81ff">0x2f</span>,<span style="color:#ae81ff">0x26</span>,<span style="color:#ae81ff">0x07</span>,<span style="color:#ae81ff">0x1d</span>,<span style="color:#ae81ff">0xaf</span>,<span style="color:#ae81ff">0xd0</span>,<span style="color:#ae81ff">0xb5</span>,<span style="color:#ae81ff">0x46</span>,<span style="color:#ae81ff">0x03</span>,<span style="color:#ae81ff">0xae</span>,<span style="color:#ae81ff">0x8d</span>,<span style="color:#ae81ff">0xc6</span>,<span style="color:#ae81ff">0xc7</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xbd</span>,<span style="color:#ae81ff">0x23</span>,<span style="color:#ae81ff">0xf6</span>,<span style="color:#ae81ff">0xe9</span>,<span style="color:#ae81ff">0xec</span>,<span style="color:#ae81ff">0x77</span>,<span style="color:#ae81ff">0x53</span>,<span style="color:#ae81ff">0xdc</span>,<span style="color:#ae81ff">0x57</span>,<span style="color:#ae81ff">0xfb</span>,<span style="color:#ae81ff">0x6a</span>,<span style="color:#ae81ff">0x8b</span>,<span style="color:#ae81ff">0x17</span>,<span style="color:#ae81ff">0x33</span>,<span style="color:#ae81ff">0x01</span>,<span style="color:#ae81ff">0xf1</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xa9</span>,<span style="color:#ae81ff">0x9b</span>,<span style="color:#ae81ff">0x21</span>,<span style="color:#ae81ff">0xb3</span>,<span style="color:#ae81ff">0xaa</span>,<span style="color:#ae81ff">0x35</span>,<span style="color:#ae81ff">0xcd</span>,<span style="color:#ae81ff">0x8f</span>,<span style="color:#ae81ff">0xac</span>,<span style="color:#ae81ff">0xa3</span>,<span style="color:#ae81ff">0x84</span>,<span style="color:#ae81ff">0xe3</span>,<span style="color:#ae81ff">0x6f</span>,<span style="color:#ae81ff">0x65</span>,<span style="color:#ae81ff">0x4f</span>,<span style="color:#ae81ff">0x97</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0xb1</span>,<span style="color:#ae81ff">0x27</span>,<span style="color:#ae81ff">0x28</span>,<span style="color:#ae81ff">0x5b</span>,<span style="color:#ae81ff">0xf3</span>,<span style="color:#ae81ff">0x55</span>,<span style="color:#ae81ff">0xb6</span>,<span style="color:#ae81ff">0xbf</span>,<span style="color:#ae81ff">0x78</span>,<span style="color:#ae81ff">0x73</span>,<span style="color:#ae81ff">0xc5</span>,<span style="color:#ae81ff">0x3f</span>,<span style="color:#ae81ff">0x86</span>,<span style="color:#ae81ff">0xd3</span>,<span style="color:#ae81ff">0x39</span>,<span style="color:#ae81ff">0x87</span>,
+</span></span><span style="display:flex;"><span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>DIV <span style="color:#f92672">=</span> <span style="color:#ae81ff">418229116.0</span>  
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>out <span style="color:#f92672">=</span> []
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#34;comms.dat&#34;</span>, <span style="color:#e6db74">&#34;rb&#34;</span>) <span style="color:#66d9ef">as</span> fp:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> chunk <span style="color:#f92672">:=</span> fp<span style="color:#f92672">.</span>read(<span style="color:#ae81ff">0x30</span>):
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> len(chunk) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0x30</span>: <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>        v, f, m <span style="color:#f92672">=</span> struct<span style="color:#f92672">.</span>unpack_from(<span style="color:#e6db74">&#34;&lt;ddd&#34;</span>, chunk, <span style="color:#ae81ff">8</span>)
+</span></span><span style="display:flex;"><span>        residual <span style="color:#f92672">=</span> m <span style="color:#f92672">-</span> (f <span style="color:#f92672">/</span> DIV <span style="color:#f92672">+</span> <span style="color:#ae81ff">1.0</span>) <span style="color:#f92672">*</span> v
+</span></span><span style="display:flex;"><span>        out<span style="color:#f92672">.</span>append(perm[int(residual) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xff</span>])
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>print(bytes(out)<span style="color:#f92672">.</span>decode())
+</span></span></code></pre></div><p>Running it:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>HTB{d0ppl3r_p3rm_l34k_h7b}
+</span></span></code></pre></div>
+<div class='callout callout-customimg' style='text-align:center; '>
+  <div class="callout-inner">
+    
+      <img src="../../images/dudsat_reverse/10.png" alt="10">
+    
+  </div>
+</div>
+
+<hr>
+<h1 id="reflection">Reflection</h1>
+<p>What makes this challenge nice is how cleanly the misdirection is layered:</p>
+<ul>
+<li>The binary <em>looks</em> like a legitimate link-budget validator - strings, output format, file parser, even a plausible 8025 MHz S-band downlink frequency.</li>
+<li>The math <em>looks</em> like a Doppler residual calculation - there&rsquo;s literally <code>c = 299792458.0</code> sitting in <code>.rodata</code>, even though it&rsquo;s never actually read.</li>
+<li>The status output <em>looks</em> like the result - LOCK vs NO-LOCK is what the binary tells you about each packet. But it&rsquo;s flavor, not signal.</li>
+<li>The actual flag computation is one short floating-point expression and a table lookup, executed every iteration with its output thrown on the floor.</li>
+</ul>
+<p>Three traps to walk through, in order: the ptrace check (cheap, just break before it), the wrong constant (<code>c</code> is bait), and the LOCK filter (don&rsquo;t drop windows 1 and 26).</p>
+
+        </section>
+        <div class="post-tags">
+          
+          
+          <nav class="nav tags">
+            <ul class="tags">
+              
+              <li><a href="../../tags/reverse-engineering">reverse-engineering</a></li>
+              
+              <li><a href="../../tags/binary-analysis">binary-analysis</a></li>
+              
+              <li><a href="../../tags/signal-processing">signal-processing</a></li>
+              
+              <li><a href="../../tags/telemetry">telemetry</a></li>
+              
+              <li><a href="../../tags/permutation-cipher">permutation-cipher</a></li>
+              
+              <li><a href="../../tags/anti-debug">anti-debug</a></li>
+              
+              <li><a href="../../tags/lcg">lcg</a></li>
+              
+              <li><a href="../../tags/ctf">ctf</a></li>
+              
+              <li><a href="../../tags/hack-the-box">hack-the-box</a></li>
+              
+              <li><a href="../../tags/ida-pro">ida-pro</a></li>
+              
+              <li><a href="../../tags/gdb">gdb</a></li>
+              
+              <li><a href="../../tags/x86-64">x86-64</a></li>
+              
+            </ul>
+          </nav>
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2026  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+</div>
+    </body>
+</html>

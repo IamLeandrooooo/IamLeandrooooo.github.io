@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Filecrypt on Leandro&#39;s Code Cave</title>
+    <link>https://iamleandrooooo.github.io/tags/filecrypt/</link>
+    <description>Recent content in Filecrypt on Leandro&#39;s Code Cave</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Wed, 29 Jul 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://iamleandrooooo.github.io/tags/filecrypt/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Five Ghosts in Ring Zero - Autopsies of Windows Kernel Exploits That Vanished Under Proof</title>
+      <link>https://iamleandrooooo.github.io/posts/five_ghosts_in_ring_zero/</link>
+      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
+      <guid>https://iamleandrooooo.github.io/posts/five_ghosts_in_ring_zero/</guid>
+      <description>There is a version of vulnerability research that reads like archaeology with a kill chain at the end.&#xA;You find the unchecked multiply. You recover the IOCTL. You draw the structure. You name the primitive. You write the report. Microsoft assigns the case, the case becomes a CVE, and the write-up begins with the satisfying sentence:&#xA;I found a bug.&#xA;This is not that write-up.&#xA;This is about five times I found code that was absolutely wrong and a vulnerability that absolutely was not there.</description>
+    </item>
+  </channel>
+</rss>

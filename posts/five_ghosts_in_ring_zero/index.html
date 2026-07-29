@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html><head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Five Ghosts in Ring Zero - Autopsies of Windows Kernel Exploits That Vanished Under Proof - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="A deep Windows 11 24H2 kernel-reversing write-up about five vulnerability candidates that looked reportable in static analysis - a near-4 GiB FileCrypt integer wrap, an ahcache kernel-address oracle, a BindFlt minifilter underflow, an IntelPEP pool overflow, and a KSecDD raw callback registration primitive - and the exact runtime, producer-contract, filesystem, and boot-lifetime invariants that killed every one before it reached MSRC." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="https://iamleandrooooo.github.io/posts/five_ghosts_in_ring_zero/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="Five Ghosts in Ring Zero - Autopsies of Windows Kernel Exploits That Vanished Under Proof">
+  <meta property="og:description" content="A deep Windows 11 24H2 kernel-reversing write-up about five vulnerability candidates that looked reportable in static analysis - a near-4 GiB FileCrypt integer wrap, an ahcache kernel-address oracle, a BindFlt minifilter underflow, an IntelPEP pool overflow, and a KSecDD raw callback registration primitive - and the exact runtime, producer-contract, filesystem, and boot-lifetime invariants that killed every one before it reached MSRC.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-07-29T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-29T00:00:00+00:00">
+    <meta property="article:tag" content="Windows">
+    <meta property="article:tag" content="Kernel">
+    <meta property="article:tag" content="Drivers">
+    <meta property="article:tag" content="Reversing">
+    <meta property="article:tag" content="Ghidra">
+    <meta property="article:tag" content="Windbg">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Five Ghosts in Ring Zero - Autopsies of Windows Kernel Exploits That Vanished Under Proof">
+  <meta name="twitter:description" content="A deep Windows 11 24H2 kernel-reversing write-up about five vulnerability candidates that looked reportable in static analysis - a near-4 GiB FileCrypt integer wrap, an ahcache kernel-address oracle, a BindFlt minifilter underflow, an IntelPEP pool overflow, and a KSecDD raw callback registration primitive - and the exact runtime, producer-contract, filesystem, and boot-lifetime invariants that killed every one before it reached MSRC.">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="../../">Home</a>
+		
+		<a href="../../posts">All posts</a>
+		
+		<a href="../../about">About</a>
+		
+		<a href="../../tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">Five Ghosts in Ring Zero - Autopsies of Windows Kernel Exploits That Vanished Under Proof</h1>
+          <div class="meta">Posted on Jul 29, 2026</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          This write-up is about the part of kernel vulnerability research that does not fit cleanly into a CVE announcement - the candidates that survive the decompiler, survive the first call-graph pass, survive a threat-model review, and then die when the executable, the upstream producer, or the object lifetime finally gets a vote. FileCrypt really does round a near-4 GiB write length through 32-bit arithmetic, but ordinary NTFS/EFS writes never enter the private transformation context that would make the wrapped value dangerous. ahcache really does expose an access-bit alias and a nested pointer-shaped request, but a debugger-grounded mapped kernel address is rejected exactly like an unmapped address, so there is no address oracle. BindFlt really does subtract eight from a tiny returned length before copying, but NTFS rejects lengths 1 through 7 before the minifilter callback runs. IntelPEP really does allocate N * 0x90 &#43; 8 in 32 bits and then populate N records, but acpi.sys can reach the wrapping count only after materializing roughly 29.8 million serializable AML objects and about 1.19 GB of interpreter state. KSecDD really does accept a raw callback pointer through a FILE_ANY_ACCESS IOCTL, but the useful slots are write-once, claimed during boot, inherited into silos, and never reopened. Every arithmetic bug was real. Every security claim was wrong. The difference was not better pattern matching; it was reconstructing who creates the input, when the state exists, what the previous layer guarantees, and whether a normal attacker can ever make all of those conditions true at once.
+        </div>
+        <section class="body">
+          <p>There is a version of vulnerability research that reads like archaeology with a kill chain at the end.</p>
+<p>You find the unchecked multiply. You recover the IOCTL. You draw the structure.
+You name the primitive. You write the report. Microsoft assigns the case, the case becomes a CVE, and the write-up begins with the satisfying sentence:</p>
+<blockquote>
+<p>I found a bug.</p>
+</blockquote>
+<p>This is not that write-up.</p>
+<p>This is about five times I found code that was absolutely wrong and a vulnerability that absolutely was not there.</p>
+<p>That distinction matters more in the Windows kernel than almost anywhere else.
+A driver can contain a real integer wrap, a real undersized allocation, a real raw pointer, and a real out-of-bounds copy while still giving an ordinary attacker nothing. The I/O manager may reject the request before the dispatch routine. NTFS may refuse the buffer before the minifilter sees it. An upstream serializer may make the dangerous count physically unconstructable. A callback slot may be writable exactly once, six seconds before the attacker exists.</p>
+<p>If you stop at the vulnerable instruction, you report fiction.</p>
+<p>So this is the autopsy collection: FileCrypt, ahcache, BindFlt, IntelPEP, and KSecDD. Five candidates from one Windows 11 24H2 driver review. Five different ways a beautiful primitive can die.</p>
+<p>The common lesson is simple:</p>
+<blockquote>
+<p>A vulnerable instruction is not a vulnerability. The vulnerability is the complete path from attacker authority to violated security boundary.</p>
+</blockquote>
+<p>Everything after that sentence is evidence.</p>
+<hr>
+<h2 id="1-my-acceptance-rule-four-proofs-or-it-is-only-a-candidate">1. My acceptance rule: four proofs or it is only a candidate</h2>
+<p>Before the individual bugs, I need to define what I mean by &ldquo;refuted.&rdquo;</p>
+<p>For a kernel finding to survive, I want four separate proofs:</p>
+<ol>
+<li><strong>Instruction proof</strong> - the machine code violates a memory, arithmetic,
+lifetime, or authorization invariant.</li>
+<li><strong>Input proof</strong> - a lower-privilege actor controls every field and state
+required to reach that instruction.</li>
+<li><strong>Path proof</strong> - the I/O manager, filesystem, framework, producer, broker,
+and previous parser layers actually permit that input to arrive.</li>
+<li><strong>Impact proof</strong> - the resulting operation crosses a meaningful security
+boundary under the real mitigations and deployment model.</li>
+</ol>
+<p>Static analysis is excellent at proof one.</p>
+<p>Most false positives die in proofs two and three.</p>
+<p>That is why the strongest question in driver research is not:</p>
+<blockquote>
+<p>Where is the unchecked copy?</p>
+</blockquote>
+<p>It is:</p>
+<blockquote>
+<p>Who is allowed to manufacture the object that reaches the unchecked copy?</p>
+</blockquote>
+<p>The answer may be an ordinary process. It may be SYSTEM. It may be the filesystem after enforcing an invariant. It may be firmware after allocating a gigabyte of interpreter state. It may be a boot component that wins a one-time race before logon.</p>
+<p>Those are completely different vulnerabilities, even if the final instruction is the same <code>memmove</code>.</p>
+<hr>
+<h2 id="2-filecrypt---the-four-gigabyte-write-that-wrapped-to-zero-and-did-nothing">2. FileCrypt - the four-gigabyte write that wrapped to zero and did nothing</h2>
+<p>FileCrypt was the cleanest arithmetic candidate in the entire review.</p>
+<p>The basic shape looked almost offensively good:</p>
+<ol>
+<li>A write length approaches <code>2^32</code>.</li>
+<li>FileCrypt rounds that length to its transformation block size.</li>
+<li>The rounding occurs in 32-bit arithmetic.</li>
+<li>The rounded value becomes zero or tiny.</li>
+<li>Downstream code still knows about the original enormous write.</li>
+</ol>
+<p>That is the classic allocation/copy mismatch:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>rounded = (length + blockSize - 1) &amp; ~(blockSize - 1)
+</span></span></code></pre></div><p>For a 512-byte block:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>length      = 0xfffffe01
+</span></span><span style="display:flex;"><span>blockSize   = 0x200
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>length + 0x1ff
+</span></span><span style="display:flex;"><span>            = 0x100000000
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>truncated32 = 0
+</span></span><span style="display:flex;"><span>rounded     = 0
+</span></span></code></pre></div><p>If one side allocates <code>rounded</code> bytes and another side processes <code>length</code> bytes, the result should be catastrophic: tiny allocation, enormous copy, nonpaged-pool destruction, bugcheck at minimum, and maybe something stronger with the right downstream shape.</p>
+<h3 id="21-why-the-static-bug-looked-reportable">2.1 Why the static bug looked reportable</h3>
+<p>The arithmetic was not a decompiler artifact. It was visible in the actual width of the registers. The add and mask occurred in 32-bit state. No checked addition widened the expression. No explicit rejection handled the boundary.</p>
+<p>The attacker model looked ordinary too. Windows exposes EFS through normal file operations. A user can create a file, mark it encrypted, reserve a huge virtual buffer, and call <code>WriteFile</code> with a near-<code>UINT32_MAX</code> length.</p>
+<p>That is enough to make the candidate feel real:</p>
+<ul>
+<li>ordinary user;</li>
+<li>ordinary file;</li>
+<li>ordinary cached write;</li>
+<li>attacker-controlled length;</li>
+<li>confirmed 32-bit wrap;</li>
+<li>kernel transformation driver downstream.</li>
+</ul>
+<p>I built the trigger around exactly that model.</p>
+<p>The first run failed early:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>validated volume=C:\ filesystem=NTFS EFS=yes free=52394 MiB
+</span></span><span style="display:flex;"><span>reserved user buffer=000000007FFF0000 length=0xFFFFF002
+</span></span><span style="display:flex;"><span>EncryptFileW failed: error=50
+</span></span></code></pre></div><p>That was not interesting yet. It only meant that particular environment did not support the requested EFS operation.</p>
+<p>The second VM did.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>validated volume=C:\ filesystem=NTFS EFS=yes free=28896 MiB
+</span></span><span style="display:flex;"><span>reserved user buffer=0000024009E30000 length=0xFFFFF002
+</span></span><span style="display:flex;"><span>target=C:\FileCryptCrashTest\trigger.bin attributes=0x00004020
+</span></span><span style="display:flex;"><span>TRIGGERING: one synchronous cached WriteFile length=0xFFFFF002
+</span></span><span style="display:flex;"><span>WriteFile returned ok=1 error=0 bytesWritten=4294963202
+</span></span><span style="display:flex;"><span>host survived
+</span></span></code></pre></div><p>Then I corrected the exact boundary:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>validated volume=C:\ filesystem=NTFS EFS=yes logicalSector=512
+</span></span><span style="display:flex;"><span>derived trigger length=0xFFFFFE01 modeledRounded=0x00000000
+</span></span><span style="display:flex;"><span>reserved user buffer=00000201D0C00000 length=0xFFFFFE01
+</span></span><span style="display:flex;"><span>target=C:\FileCryptCrashTest\trigger-corrected.bin attributes=0x00004020
+</span></span><span style="display:flex;"><span>TRIGGERING: one synchronous cached WriteFile length=0xFFFFFE01
+</span></span><span style="display:flex;"><span>WriteFile returned ok=1 error=0 bytesWritten=4294966785
+</span></span><span style="display:flex;"><span>host survived
+</span></span></code></pre></div><p>The exact wrapping write completed successfully.</p>
+<p>Not &ldquo;the process survived but the kernel logged an error.&rdquo; Not &ldquo;Verifier caught something later.&rdquo; The system accepted the write and reported the entire near-four-gigabyte length.</p>
+<h3 id="22-the-invariant-i-had-modeled-incorrectly">2.2 The invariant I had modeled incorrectly</h3>
+<p>The mistake was treating &ldquo;EFS-encrypted file&rdquo; and &ldquo;FileCrypt transformation context&rdquo; as the same state.</p>
+<p>They are not.</p>
+<p>The vulnerable rounding code is downstream of a private stream/operation context. Ordinary EFS writes do not automatically enter that exact path merely because the target file carries the encrypted attribute. NTFS and EFS can service the write through a different pipeline whose length accounting never uses the wrapped FileCrypt value as an allocation boundary.</p>
+<p>So the arithmetic defect is real, but the dangerous state transition is missing:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>ordinary user write
+</span></span><span style="display:flex;"><span>    -&gt; NTFS/EFS path
+</span></span><span style="display:flex;"><span>    -&gt; no required private FileCrypt stream context
+</span></span><span style="display:flex;"><span>    -&gt; vulnerable transform not selected
+</span></span><span style="display:flex;"><span>    -&gt; write completes normally
+</span></span></code></pre></div><p>The candidate died because I proved the most important attacker-controlled input - the write length - while assuming the most important driver-controlled input - the transformation context.</p>
+<p>That is a classic kernel-research trap. A callback can be attached to an IRP path without every IRP of that broad type reaching it. The file attribute, major function, and byte count may all match while an ECP, stream context, internal flag, or originating component still gates the vulnerable branch.</p>
+<h3 id="23-verdict">2.3 Verdict</h3>
+<p>FileCrypt contains a genuine length-invariant defect.</p>
+<p>I did not establish an ordinary-user path into the state where that defect becomes memory corruption.</p>
+<p>No report.</p>
+<p>The right future question is not &ldquo;can I issue a larger write?&rdquo; The VM already answered that. The right question is:</p>
+<blockquote>
+<p>Which trusted component creates the private FileCrypt context, and can an ordinary attacker cause that component to attach it to attacker-controlled file data and length?</p>
+</blockquote>
+<p>Without that bridge, the four-gigabyte wrap is a latent bug, not a vulnerability.</p>
+<hr>
+<h2 id="3-ahcache---the-kernel-address-oracle-where-every-address-returned-the-same-answer">3. ahcache - the kernel-address oracle where every address returned the same answer</h2>
+<p>The ahcache candidate was the opposite kind of seduction.</p>
+<p>FileCrypt had spectacular arithmetic and missing state. ahcache had suspicious reachability and a structure that looked like a kernel pointer oracle.</p>
+<p>The device could be opened through an access-bit alias with a restricted token.
+A forged operation-6 request accepted a nested address and length. The obvious model was:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>attacker supplies candidate kernel VA
+</span></span><span style="display:flex;"><span>    -&gt; driver attempts to consume bytes at VA
+</span></span><span style="display:flex;"><span>    -&gt; mapped address behaves differently from unmapped address
+</span></span><span style="display:flex;"><span>    -&gt; attacker learns kernel address validity
+</span></span></code></pre></div><p>Even a one-bit mapped/unmapped oracle matters in the kernel. It can recover module bases, defeat KASLR, guide a separate write primitive, or distinguish pool layouts.</p>
+<h3 id="31-the-first-probe-was-ambiguous">3.1 The first probe was ambiguous</h3>
+<p>The initial request:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Original-token open: valid=True, error=0
+</span></span><span style="display:flex;"><span>Restricted-token DesiredAccess=0 open: OK
+</span></span><span style="display:flex;"><span>Forged op6: ok=True error=0 bytesReturned=0 result=0
+</span></span></code></pre></div><p>That proved two things:</p>
+<ul>
+<li>the alias/restricted-token handle path existed;</li>
+<li>the forged operation shape was accepted in at least one benign form.</li>
+</ul>
+<p>It did not prove the address oracle.</p>
+<p>The address oracle required a controlled pair: one address known to be mapped, one address known not to be mapped, identical request otherwise.</p>
+<p>Guessing a kernel address is not a control. If both guesses fail, I learn nothing about the driver.</p>
+<p>So I connected kernel WinDbg and asked the kernel itself:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>0: kd&gt; x nt!NtBuildNumber
+</span></span><span style="display:flex;"><span>fffff801`9f9aa74c nt!NtBuildNumber
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>0: kd&gt; dw nt!NtBuildNumber L1
+</span></span><span style="display:flex;"><span>fffff801`9f9aa74c  6658
+</span></span></code></pre></div><p>Now I had a debugger-proven mapped kernel address containing known data.</p>
+<p>The test:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>AhcacheProbe.exe --address 0xFFFFF8019F9AA74C --length 2
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Original-token open: valid=True, error=0
+</span></span><span style="display:flex;"><span>Restricted-token DesiredAccess=0 open: OK
+</span></span><span style="display:flex;"><span>Oracle input: address=0xFFFFF8019F9AA74C length=2
+</span></span><span style="display:flex;"><span>Forged op6: ok=False error=998 bytesReturned=0 result=0
+</span></span></code></pre></div><p>Then an address selected as unmapped:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>AhcacheProbe.exe --address 0xFFFFF00000000000 --length 2
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Original-token open: valid=True, error=0
+</span></span><span style="display:flex;"><span>Restricted-token DesiredAccess=0 open: OK
+</span></span><span style="display:flex;"><span>Oracle input: address=0xFFFFF00000000000 length=2
+</span></span><span style="display:flex;"><span>Forged op6: ok=False error=998 bytesReturned=0 result=0
+</span></span></code></pre></div><p>Mapped and unmapped produced the same result:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>ERROR_NOACCESS (998)
+</span></span></code></pre></div><h3 id="32-why-that-result-kills-the-oracle">3.2 Why that result kills the oracle</h3>
+<p>An oracle is not &ldquo;the driver touches my field.&rdquo;</p>
+<p>An oracle is a stable, attacker-observable distinction correlated with the secret property being queried.</p>
+<p>Formally, if:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>f(mapped_address) == f(unmapped_address)
+</span></span></code></pre></div><p>then <code>f</code> communicates no mapped/unmapped bit.</p>
+<p>The nested pointer shape and access alias were real. The security interpretation was wrong. Somewhere before the useful dereference, the path constrains the address, probes it as user memory, rejects the request&rsquo;s mode, or otherwise normalizes both kernel-space cases into the same access violation.</p>
+<p>The exact internal mechanism matters for code quality, but not for the vulnerability verdict. The executable already answered the security question.</p>
+<h3 id="33-the-methodological-point">3.3 The methodological point</h3>
+<p>Kernel-address candidates need debugger-grounded controls.</p>
+<p>Not:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>try 0xfffff80000000000
+</span></span><span style="display:flex;"><span>try 0xfffff90000000000
+</span></span><span style="display:flex;"><span>both failed
+</span></span></code></pre></div><p>But:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>resolve a symbol in the running kernel
+</span></span><span style="display:flex;"><span>read it successfully in kd
+</span></span><span style="display:flex;"><span>send that exact VA through the candidate
+</span></span><span style="display:flex;"><span>compare with a deliberately unmapped VA
+</span></span></code></pre></div><p>Anything weaker is astrology with hexadecimal.</p>
+<h3 id="34-verdict">3.4 Verdict</h3>
+<p>The access-bit alias exists.</p>
+<p>The forged operation exists.</p>
+<p>The kernel-address oracle does not.</p>
+<p>No report.</p>
+<hr>
+<h2 id="4-bindflt---the-minifilter-underflow-that-ntfs-refuses-to-deliver">4. BindFlt - the minifilter underflow that NTFS refuses to deliver</h2>
+<p>BindFlt was the purest example of why a minifilter callback cannot be audited as if it owns the whole request contract.</p>
+<p>The suspicious code consumed a returned filename structure and performed an eight-byte subtraction before copying. For returned lengths from one through seven:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>payloadLength = returnedLength - 8
+</span></span></code></pre></div><p>Unsigned arithmetic turns that into an enormous value.</p>
+<p>Inside the callback, this looks fatal. Tiny structure, huge derived copy, kernel memory corruption.</p>
+<h3 id="41-the-tempting-model">4.1 The tempting model</h3>
+<p>The minifilter is loaded and attached. An ordinary process can query file information. Some BindFlt mappings may expose paths the user can open. The callback receives the query result and transforms it.</p>
+<p>So the hypothesis was:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>ordinary process requests tiny output length
+</span></span><span style="display:flex;"><span>    -&gt; filesystem returns short success/partial result
+</span></span><span style="display:flex;"><span>    -&gt; BindFlt pre/post path sees returnedLength 1..7
+</span></span><span style="display:flex;"><span>    -&gt; returnedLength - 8 underflows
+</span></span><span style="display:flex;"><span>    -&gt; oversized pool copy
+</span></span></code></pre></div><p>The arithmetic proof was easy.</p>
+<p>The upstream-contract proof was the entire case.</p>
+<h3 id="42-native-tests-against-the-actual-filesystem-boundary">4.2 Native tests against the actual filesystem boundary</h3>
+<p>I tested the relevant native information classes with lengths 1 through 7.</p>
+<p>Every one returned:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>STATUS_INFO_LENGTH_MISMATCH
+</span></span><span style="display:flex;"><span>IoStatus.Information = 0
+</span></span></code></pre></div><p>And it happened before the minifilter received a usable short result.</p>
+<p>Length 8 was the first request that crossed the native minimum and entered the normal dispatch shape.</p>
+<p>That changes the reachable range:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>static function domain:
+</span></span><span style="display:flex;"><span>    returnedLength = 0..UINT32_MAX
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>filesystem-produced domain:
+</span></span><span style="display:flex;"><span>    returnedLength = 0 on rejection
+</span></span><span style="display:flex;"><span>    or returnedLength &gt;= 8 on dispatch
+</span></span></code></pre></div><p>The vulnerable interval <code>1..7</code> exists in the C arithmetic and does not exist in the producer&rsquo;s output language.</p>
+<h3 id="43-why-but-the-driver-should-still-check-is-not-a-security-argument">4.3 Why &ldquo;but the driver should still check&rdquo; is not a security argument</h3>
+<p>It absolutely should check.</p>
+<p>Defense in depth says the callback should reject any length below the structure minimum. Contracts change. Alternate filesystems exist. Kernel callers can be wrong. Robust code validates at every trust boundary.</p>
+<p>But MSRC severity is not assigned to hypothetical future contract violations.
+The question was whether an ordinary process on the reviewed Microsoft stack could cause the affected callback to receive one of those values.</p>
+<p>The answer was no.</p>
+<p>The filesystem is not merely &ldquo;another function before the bug.&rdquo; It is the producer of the value. If the producer&rsquo;s successful-output invariant excludes the dangerous range, the attacker cannot select that range by choosing a smaller user buffer. The request is rejected before the vulnerable consumer exists.</p>
+<h3 id="44-a-second-bindflt-lesson-device-reachability-is-not-path-reachability">4.4 A second BindFlt lesson: device reachability is not path reachability</h3>
+<p>BindFlt also has a communication port protected by FltMgr&rsquo;s default security descriptor. Standard and restricted tokens were denied at <code>FilterConnectCommunicationPort</code>. Mapping creation belongs to privileged components.</p>
+<p>That does not by itself refute every filesystem callback bug - a user might operate through a mapping created by SYSTEM. But it destroys the lazy argument:</p>
+<blockquote>
+<p>The driver is loaded, therefore the user reaches the vulnerable state.</p>
+</blockquote>
+<p>Loaded is not reachable.</p>
+<p>Attached is not reachable.</p>
+<p>An open handle is not the required stream context.</p>
+<p>And a minifilter callback is not proof that the filesystem will manufacture every integer the decompiler lets you imagine.</p>
+<h3 id="45-verdict">4.5 Verdict</h3>
+<p>The subtraction should be hardened.</p>
+<p>The vulnerable length interval is not produced by the native filesystem path.</p>
+<p>No report.</p>
+<hr>
+<h2 id="5-intelpep---a-real-pool-overflow-behind-thirty-million-aml-objects">5. IntelPEP - a real pool overflow behind thirty million AML objects</h2>
+<p>IntelPEP was the candidate that survived the longest because every time one invariant killed it, a deeper architectural fact revived it.</p>
+<p>The parser consumes ACPI <code>_DSM</code> output describing firmware dependency packages. It reads a count <code>N</code> and allocates:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>allocationSize = N * 0x90 + 8
+</span></span></code></pre></div><p>The arithmetic is 32-bit.</p>
+<p>The parser then walks <code>N</code> package elements and writes fixed-size output records.</p>
+<p>This is textbook:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>small wrapped allocation
+</span></span><span style="display:flex;"><span>    + original large iteration count
+</span></span><span style="display:flex;"><span>    = nonpaged pool overflow
+</span></span></code></pre></div><h3 id="51-the-first-static-model">5.1 The first static model</h3>
+<p>The machine code effectively performs:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>edx = N * 9
+</span></span><span style="display:flex;"><span>edx &lt;&lt;= 4
+</span></span><span style="display:flex;"><span>edx += 8
+</span></span></code></pre></div><p>All in 32 bits.</p>
+<p>No checked multiply. No <code>N &lt;= maximum</code>. No comparison between <code>N</code> and the serialized ACPI output length.</p>
+<p>Once the allocation wraps, the first record writes fields near offsets
+<code>+0x8c</code> and <code>+0x90</code>, already beyond a tiny allocation.</p>
+<p>The <code>_DSM</code> call was automatic during Intel PEP initialization, giving a clear firmware-to-kernel boundary.</p>
+<p>This looked reportable as malicious-ACPI boot-time pool corruption.</p>
+<h3 id="52-the-first-attempted-refutation---count-might-be-one">5.2 The first attempted refutation - Count might be one</h3>
+<p><code>N</code> was not a raw AML integer. It was <code>ACPI_EVAL_OUTPUT_BUFFER.Count</code>, produced by <code>acpi.sys</code>.</p>
+<p>That matters because ACPI packages can be represented in two ways:</p>
+<ol>
+<li>one top-level package argument whose nested payload contains elements;</li>
+<li>a flattened top-level output whose <code>Count</code> equals the package element count.</li>
+</ol>
+<p>If IntelPEP always received representation one, <code>Count</code> would be one and the overflow would be dead.</p>
+<p>So I reversed the ACPI serializer.</p>
+<p>The result revived the bug.</p>
+<p>For a top-level Package/VarPackage, the size helper reads the internal element count, writes that count to <code>ACPI_EVAL_OUTPUT_BUFFER.Count</code>, recursively sizes every child, and omits an outer wrapper. The serializer mirrors the same behavior and serializes the children directly.</p>
+<p>So IntelPEP really can receive a large flattened <code>Count</code>.</p>
+<p>The producer-contract refutation failed.</p>
+<h3 id="53-the-actual-killing-constraint---every-element-must-exist">5.3 The actual killing constraint - every element must exist</h3>
+<p>The first wrapping count is roughly:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>N ~= 29,826,162
+</span></span></code></pre></div><p>Could firmware encode that compactly with:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>VarPackage(29826162) {
+</span></span><span style="display:flex;"><span>    one_valid_element
+</span></span><span style="display:flex;"><span>    // omitted remainder
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>If omitted slots became serializable zero integers, the AML could stay small while <code>Count</code> became enormous. That would make the IntelPEP overflow real.</p>
+<p>So I traced uninitialized <code>VarPackage</code> elements through <code>acpi.sys</code>.</p>
+<p>The size helper tolerates internal type-zero/null elements as zero-byte children.</p>
+<p>The serializer does not.</p>
+<p>It accepts only the serializable internal object types - Integer, String, Buffer, and Package. On the first uninitialized slot it returns:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>STATUS_ACPI_INVALID_DATA
+</span></span></code></pre></div><p>That means every one of the roughly 29.8 million elements must be initialized to a serializable object before IntelPEP receives a successful result.</p>
+<p>And ACPI&rsquo;s internal package representation costs roughly <code>0x28</code> bytes per element:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>29,826,162 * 0x28
+</span></span><span style="display:flex;"><span>    = 1,193,046,480 bytes
+</span></span></code></pre></div><p>About 1.19 GB just for the internal element array, before interpreter overhead, child objects, serialization buffers, traversal, and the IntelPEP allocation.</p>
+<p>Firmware also needs tens of millions of AML initialization operations unless a bulk-initialization primitive exists. I found none.</p>
+<p>The chain becomes:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>malicious AML
+</span></span><span style="display:flex;"><span>    -&gt; allocate ~1.19 GB ACPI package state
+</span></span><span style="display:flex;"><span>    -&gt; execute ~29.8 million serializable element initializations
+</span></span><span style="display:flex;"><span>    -&gt; recursively size every child
+</span></span><span style="display:flex;"><span>    -&gt; allocate canonical output
+</span></span><span style="display:flex;"><span>    -&gt; serialize every child
+</span></span><span style="display:flex;"><span>    -&gt; only then hand Count to IntelPEP
+</span></span><span style="display:flex;"><span>    -&gt; IntelPEP allocation wraps
+</span></span></code></pre></div><p>The arithmetic bug at the end is real.</p>
+<p>The machine is overwhelmingly more likely to fail from ACPI resource exhaustion long before reaching it.</p>
+<h3 id="54-why-this-refutation-is-different">5.4 Why this refutation is different</h3>
+<p>This is not a clean mathematical impossibility like BindFlt&rsquo;s excluded length range.</p>
+<p>It is a feasibility refutation.</p>
+<p>No explicit serializer cap forbids the count. The representation supports it.
+Given absurd enough resources and time, the state may be constructable.</p>
+<p>But vulnerability research is not about inputs that exist in Platonic integer space. It is about realistic attacker mechanisms on real machines.</p>
+<p>A candidate whose prerequisite is &ldquo;successfully construct more than a gigabyte of ACPI interpreter objects and run thirty million AML initializations during firmware evaluation&rdquo; is not the boot-time tiny-allocation pool overflow the first pseudocode suggested.</p>
+<p>The correct classification is:</p>
+<ul>
+<li>unsafe arithmetic;</li>
+<li>valuable hardening target;</li>
+<li>possible resource-exhaustion behavior upstream;</li>
+<li>no realistic demonstrated path to the wrapped IntelPEP allocation.</li>
+</ul>
+<h3 id="55-verdict">5.5 Verdict</h3>
+<p>The multiplication is wrong.</p>
+<p>The parser should use checked <code>size_t</code> arithmetic and validate <code>N</code> against serialized length.</p>
+<p>The malicious-firmware corruption path is not practically established.</p>
+<p>No report as a reachable pool overflow.</p>
+<hr>
+<h2 id="6-ksecdd---the-file_any_access-raw-callback-pointer-that-arrives-too-late">6. KSecDD - the FILE_ANY_ACCESS raw callback pointer that arrives too late</h2>
+<p>KSecDD was the candidate that looked the most like immediate code execution.</p>
+<p>The device security descriptor allowed broad access. A buffered <code>FILE_ANY_ACCESS</code> IOCTL accepted a 16-byte record:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>slot
+</span></span><span style="display:flex;"><span>rawPointer
+</span></span></code></pre></div><p>The dispatcher forwarded it without an observed token check, <code>PreviousMode</code> gate, pointer probe, or provenance validation.</p>
+<p>Some slots installed the raw pointer into a global callback table. Later dispatch loaded the global, dereferenced its first qword, and invoked through <code>__guard_dispatch_icall</code>.</p>
+<p>Another slot treated the raw address as an array of provider records and rewrote them in place.</p>
+<p>On paper:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>ordinary user
+</span></span><span style="display:flex;"><span>    -&gt; FILE_ANY_ACCESS IOCTL
+</span></span><span style="display:flex;"><span>    -&gt; attacker raw kernel pointer stored globally
+</span></span><span style="display:flex;"><span>    -&gt; later indirect kernel call/dereference
+</span></span></code></pre></div><p>That is the shape of a catastrophic vulnerability.</p>
+<h3 id="61-why-kcfg-does-not-magically-make-raw-pointers-safe">6.1 Why KCFG does not magically make raw pointers safe</h3>
+<p>Kernel Control Flow Guard constrains indirect-call targets. It does not make an attacker-selected pointer safe to dereference.</p>
+<p>Even if KCFG blocks direct execution of user memory:</p>
+<ul>
+<li>a pointer to invalid kernel memory can bugcheck;</li>
+<li>a pointer to a valid CFG target with attacker-controlled object layout may
+create call-oriented behavior;</li>
+<li>an unchecked record-array rewrite can corrupt kernel data without calling
+anything.</li>
+</ul>
+<p>So &ldquo;there is <code>__guard_dispatch_icall</code>&rdquo; was not a refutation.</p>
+<p>The raw-pointer trust was real.</p>
+<h3 id="62-the-live-test-that-changed-the-threat-model">6.2 The live test that changed the threat model</h3>
+<p>The registration slots were write-once.</p>
+<p>Safe zero-pointer probes against the useful global slots returned:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>STATUS_OBJECT_NAME_COLLISION
+</span></span></code></pre></div><p>for slots 0, 1, 3, and 4.</p>
+<p>They were already claimed.</p>
+<p>Then I reconstructed lifetime:</p>
+<ul>
+<li>KSecDD is a boot-start/Base-group driver.</li>
+<li>SYSTEM/LSASS security initialization claims the provider slots.</li>
+<li>There is no unregister path.</li>
+<li>There is no reset IOCTL.</li>
+<li>There is no practical unload/reload cycle available to an ordinary user.</li>
+<li>Fresh server/container silos inherit the already-populated host provider
+table rather than receiving empty slots.</li>
+</ul>
+<p>The useful state exists once:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>slot == NULL
+</span></span></code></pre></div><p>And it exists during early boot before the ordinary attacker can open the device and race registration.</p>
+<p>By the time user mode is alive:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>slot != NULL
+</span></span><span style="display:flex;"><span>registration -&gt; STATUS_OBJECT_NAME_COLLISION
+</span></span></code></pre></div><h3 id="63-the-slot-2-complication">6.3 The slot-2 complication</h3>
+<p>Slot 2 was not a normal callback install. It performed a one-time in-place rotation/prepend over a provider-record array.</p>
+<p>That is still unsafe with an untrusted pointer. But host initialization claims the operation, and silo creation copies the populated host provider table into the silo. A new silo does not reopen an empty registration window.</p>
+<p>Without:</p>
+<ul>
+<li>a reset mechanism;</li>
+<li>an unregister path;</li>
+<li>a user-controlled preclaim before legitimate initialization;</li>
+<li>or a fresh namespace whose table starts empty;</li>
+</ul>
+<p>the raw-pointer primitive is unreachable at the time the attacker has the handle.</p>
+<h3 id="64-this-is-the-lifetime-equivalent-of-an-acl">6.4 This is the lifetime equivalent of an ACL</h3>
+<p>Security reviews usually treat authorization spatially:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Who can open the device?
+</span></span><span style="display:flex;"><span>Who can issue the IOCTL?
+</span></span><span style="display:flex;"><span>Which token passes the check?
+</span></span></code></pre></div><p>KSecDD required temporal authorization:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Who can issue the IOCTL while the slot is still writable?
+</span></span></code></pre></div><p>The DACL said &ldquo;broadly reachable.&rdquo;</p>
+<p>The lifetime said &ldquo;too late.&rdquo;</p>
+<p>That is why a one-time initialization primitive can look world-writable in the binary and still be unavailable to every post-logon attacker.</p>
+<p>The vulnerable state is protected by chronology.</p>
+<h3 id="65-verdict">6.5 Verdict</h3>
+<p>The registration API trusts raw pointers too aggressively.</p>
+<p>The useful slots are already populated before an ordinary attacker exists and cannot be reopened.</p>
+<p>No practical local privilege-escalation path.</p>
+<p>No report as a post-logon vulnerability.</p>
+<hr>
+<h2 id="7-the-smaller-bodies-in-the-morgue">7. The smaller bodies in the morgue</h2>
+<p>The five candidates above deserved full autopsies. Several smaller findings died for the same underlying reasons.</p>
+<h3 id="71-rdbss---a-real-16-bit-allocation-wrap-with-no-microsoft-caller">7.1 RDBSS - a real 16-bit allocation wrap with no Microsoft caller</h3>
+<p><code>RxPrepareToReparseSymbolicLink</code> performs a 16-bit <code>Length + 0x16</code> allocation calculation and copies the original length. Values around <code>0xffea</code> produce a tiny allocation followed by an approximately 64 KiB overwrite.</p>
+<p>That root cause is real.</p>
+<p>But:</p>
+<ul>
+<li>no installed Microsoft inbox driver imported the export by name or ordinal;</li>
+<li>RDBSS had no internal caller;</li>
+<li>normal reparse payload limits sit far below the wrapping range.</li>
+</ul>
+<p>An exported kernel function is not an attack surface by itself. Someone lower privileged needs a path to call it with the dangerous value.</p>
+<p>No caller, no vulnerability.</p>
+<h3 id="72-ndproxy---a-buffered-output-overflow-behind-a-system-only-device">7.2 NDProxy - a buffered output overflow behind a SYSTEM-only device</h3>
+<p>One NDProxy IOCTL accepts output sizes below its true completion structure requirement because of unsigned subtraction, then an asynchronous completion writes roughly 48 bytes plus a header.</p>
+<p>The copy bug is real.</p>
+<p>Direct device access is SYSTEM-only. The RAS broker constructs trusted output sizes from its own allocations, and I found no unprivileged forwarding path for an attacker-selected small length.</p>
+<p>The difference between &ldquo;the IOCTL is vulnerable&rdquo; and &ldquo;an attacker can issue the vulnerable IOCTL&rdquo; is the device security descriptor plus broker protocol.</p>
+<h3 id="73-acpi-generic-method-marshalling---firmware-bugs-behind-a-umdf-trust-flag">7.3 ACPI generic method marshalling - firmware bugs behind a UMDF trust flag</h3>
+<p>Generic ACPI method marshallers contained real malformed-buffer behavior, but the direct user path required <code>IRP_UM_DRIVER_INITIATED</code> semantics or a permissive Microsoft UMDF bridge. I found neither for the candidate method.</p>
+<p>The parser may be wrong. The trust-boundary bridge was missing.</p>
+<h3 id="74-the-proposed-storufs-bitmap-overflow---one-runtime-field-decides-reality">7.4 The proposed StorUFS bitmap overflow - one runtime field decides reality</h3>
+<p>The HPB parser passes a 16-bit region index to <code>RtlSetBit</code> without an explicit comparison against <code>SizeOfBitMap</code>.</p>
+<p>That sounds like a one-bit OOB write up to 8 KiB past the bitmap.</p>
+<p>Except a 65,536-bit bitmap is exactly 8 KiB, and then every possible 16-bit index is valid.</p>
+<p><code>storufs.sys</code> only reads the bitmap pointer/size fields; an external StorPort setup path populates them. Static analysis could not prove whether the size is negotiated and smaller or fixed at <code>0x10000</code>.</p>
+<p>One debugger command decides the finding:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>dd adapter+ef0 L1
+</span></span></code></pre></div><p>If it prints <code>00010000</code>, the global OOB theory is dead.</p>
+<p>That candidate is not &ldquo;confirmed with a caveat.&rdquo; It is conditional and must stay conditional until the invariant is measured.</p>
+<hr>
+<h2 id="8-five-different-ways-a-kernel-finding-dies">8. Five different ways a kernel finding dies</h2>
+<p>These cases look unrelated at the driver level. At the invariant level they form a useful taxonomy.</p>
+<table>
+<thead>
+<tr>
+<th>Candidate</th>
+<th>Vulnerable instruction</th>
+<th>What killed the security claim</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FileCrypt</td>
+<td>32-bit near-4 GiB rounding wrap</td>
+<td>Required private transformation context absent from ordinary EFS writes</td>
+</tr>
+<tr>
+<td>ahcache</td>
+<td>Nested address-shaped operation</td>
+<td>Mapped and unmapped kernel addresses produce identical rejection</td>
+</tr>
+<tr>
+<td>BindFlt</td>
+<td><code>returnedLength - 8</code> underflow</td>
+<td>NTFS rejects lengths 1–7 before minifilter consumption</td>
+</tr>
+<tr>
+<td>IntelPEP</td>
+<td><code>N * 0x90 + 8</code> allocation wrap</td>
+<td>Producer must materialize ~29.8 million serializable objects and ~1.19 GB state</td>
+</tr>
+<tr>
+<td>KSecDD</td>
+<td>Raw pointer registration</td>
+<td>Write-once slots claimed during boot; no reset/unregister/post-logon window</td>
+</tr>
+</tbody>
+</table>
+<p>Those are five refutation families:</p>
+<ol>
+<li><strong>Missing state</strong> - the attacker controls the bytes but cannot create the
+internal context.</li>
+<li><strong>Missing distinction</strong> - suspicious behavior exists but communicates no
+security-relevant bit.</li>
+<li><strong>Producer invariant</strong> - the previous layer excludes the dangerous value.</li>
+<li><strong>Feasibility ceiling</strong> - the dangerous value exists mathematically but not
+through a realistic producer.</li>
+<li><strong>Lifetime exclusion</strong> - the operation is exposed only after its useful
+state has disappeared.</li>
+</ol>
+<p>This is the checklist I now apply before I let myself call anything a vulnerability.</p>
+<hr>
+<h2 id="9-why-the-decompiler-keeps-winning-arguments-it-should-lose">9. Why the decompiler keeps winning arguments it should lose</h2>
+<p>Decompiler output is local.</p>
+<p>Security is architectural.</p>
+<p>Ghidra can show:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>size <span style="color:#f92672">=</span> count <span style="color:#f92672">*</span> <span style="color:#ae81ff">0x90</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">8</span>;
+</span></span><span style="display:flex;"><span>buffer <span style="color:#f92672">=</span> <span style="color:#a6e22e">Allocate</span>(size);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> count; i<span style="color:#f92672">++</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">populate</span>(buffer <span style="color:#f92672">+</span> <span style="color:#ae81ff">8</span> <span style="color:#f92672">+</span> i <span style="color:#f92672">*</span> <span style="color:#ae81ff">0x90</span>);
+</span></span></code></pre></div><p>And that pseudocode can be perfectly accurate while the vulnerability claim is wrong.</p>
+<p>The decompiler does not tell you:</p>
+<ul>
+<li><code>count</code> came from a serializer that rejects omitted elements;</li>
+<li>the callback only runs with a private ECP;</li>
+<li>the filesystem refuses the dangerous length;</li>
+<li>the slot was consumed during boot;</li>
+<li>the device DACL blocks the caller;</li>
+<li>the broker reconstructs a safe buffer;</li>
+<li>the completion reports one value but leaves another buffer modified;</li>
+<li>the relevant pointer is provider-owned, not the lookaside object you found
+five functions later.</li>
+</ul>
+<p>Those facts live in different binaries, different phases, different object lifetimes, or the running machine.</p>
+<p>This is why &ldquo;I audited the function&rdquo; is not enough.</p>
+<p>The unit of kernel security research is the system.</p>
+<hr>
+<h2 id="10-how-i-try-to-kill-a-finding-now">10. How I try to kill a finding now</h2>
+<p>Every serious candidate gets a written kill-list before I build the PoC.</p>
+<h3 id="input-provenance">Input provenance</h3>
+<ul>
+<li>Is the field raw user input, firmware input, network input, or produced by a trusted parser?</li>
+<li>Is the apparent count serialized, flattened, normalized, clamped, or reconstructed?</li>
+<li>Does another layer replace the caller&rsquo;s buffer with its own?</li>
+</ul>
+<h3 id="reachability">Reachability</h3>
+<ul>
+<li>What exact handle, IOCTL, FSCTL, escape, callback, or protocol message reaches the instruction?</li>
+<li>What access bits are encoded in the control code?</li>
+<li>What does the device or communication-port ACL allow?</li>
+<li>Does a broker expose the dangerous parameter or manufacture a safe one?</li>
+</ul>
+<h3 id="state">State</h3>
+<ul>
+<li>Which context, flag, ECP, stream object, feature bit, mapping, or queue must exist?</li>
+<li>Who creates it?</li>
+<li>Can the attacker create it, inherit it, or race it?</li>
+<li>Is it available after logon?</li>
+</ul>
+<h3 id="producer-contract">Producer contract</h3>
+<ul>
+<li>What values can the immediate producer successfully return?</li>
+<li>What lengths does the filesystem reject before the callback?</li>
+<li>What object types does the serializer accept?</li>
+<li>Does failure zero <code>Information</code>, preserve partial bytes, or suppress the consumer entirely?</li>
+</ul>
+<h3 id="lifetime">Lifetime</h3>
+<ul>
+<li>Is the slot write-once?</li>
+<li>Is the object referenced across unlock?</li>
+<li>Does teardown wait for callbacks?</li>
+<li>Can a fresh silo/device/session recreate vulnerable initial state?</li>
+</ul>
+<h3 id="impact">Impact</h3>
+<ul>
+<li>Is this arbitrary addressable memory access, relative access, one-bit access, resource exhaustion, or only malformed state?</li>
+<li>Who already controls the victim?</li>
+<li>Is &ldquo;host to ordinary guest&rdquo; actually a boundary in that deployment?</li>
+<li>Do I have a disclosure channel, or merely an internal OOB read?</li>
+</ul>
+<h3 id="executable-falsification">Executable falsification</h3>
+<ul>
+<li>Can I build a control case that proves the whole protocol except one disputed variable?</li>
+<li>Can WinDbg give me a known mapped address rather than a guessed one?</li>
+<li>Can I stop before the corrupting instruction and prove the inequality?</li>
+<li>What result would make me delete the report?</li>
+</ul>
+<p>That last question matters.</p>
+<p>If no possible experiment can make you abandon the finding, you are not validating it. You are defending it.</p>
+<hr>
+<h2 id="11-what-i-would-have-reported-if-i-had-stopped-early">11. What I would have reported if I had stopped early</h2>
+<p>If I had stopped at the best-looking pseudocode, the report titles would have been spectacular:</p>
+<ul>
+<li><strong>FileCrypt near-4 GiB integer overflow leads to nonpaged-pool corruption</strong></li>
+<li><strong>ahcache restricted-token IOCTL exposes kernel address-validity oracle</strong></li>
+<li><strong>BindFlt short filename query causes unsigned-underflow pool overwrite</strong></li>
+<li><strong>IntelPEP malicious ACPI package count causes boot-time pool overflow</strong></li>
+<li><strong>KSecDD FILE_ANY_ACCESS callback registration enables kernel code execution</strong></li>
+</ul>
+<p>Every vulnerability report begins with an inference. The first clause is usually true; the second is merely assumed. The arithmetic is correct, therefore the execution path is assumed. The path is reachable, therefore the program state is assumed. The state exists at boot, therefore it is assumed to exist after logon. The driver accepts a pointer, therefore the destination is assumed to be unused. The driver reads an address, therefore the result is assumed to distinguish mapped from unmapped. Vulnerability research is largely the systematic removal of those &ldquo;therefore&rdquo; statements, replacing assumptions with evidence until only the facts remain.</p>
+<hr>
+<h2 id="12-closing---be-the-person-who-kills-your-own-bugs---always">12. Closing - be the person who kills your own bugs - ALWAYS</h2>
+<p>There is ego in reversing.</p>
+<p>You spend hours naming anonymous functions, reconstructing structures from offsets, following an IRP through three drivers, and finally land on the one instruction that explains everything. The primitive is elegant. The exploit story writes itself. You can already see the title.</p>
+<p>That is exactly when you should become hostile to your own conclusions. The best reverser in the room is not the person who can make every <code>FUN_140...</code> sound exploitable, but the one who knows which invisible contract still needs to be reconstructed. <strong>FileCrypt</strong> taught me that a file attribute is not an internal transformation context. <strong>ahcache</strong> taught me that a suspicious pointer is not an oracle until mapped and unmapped behavior actually diverges. <strong>BindFlt</strong> taught me that the producer&rsquo;s successful-output domain is part of the consumer&rsquo;s security proof. <strong>IntelPEP</strong> taught me to count the objects required to manufacture the count. <strong>KSecDD</strong> taught me that time itself can become part of a security boundary. None of those investigations became CVEs—and that is exactly as it should be. They failed in my VM, under my debugger, and in my notebook, rather than in an MSRC response explaining the invariant I should have discovered myself. That is not failed research; it is the work.</p>
+
+        </section>
+        <div class="post-tags">
+          
+          
+          <nav class="nav tags">
+            <ul class="tags">
+              
+              <li><a href="../../tags/windows">windows</a></li>
+              
+              <li><a href="../../tags/kernel">kernel</a></li>
+              
+              <li><a href="../../tags/drivers">drivers</a></li>
+              
+              <li><a href="../../tags/reversing">reversing</a></li>
+              
+              <li><a href="../../tags/ghidra">ghidra</a></li>
+              
+              <li><a href="../../tags/windbg">windbg</a></li>
+              
+              <li><a href="../../tags/vulnerability-research">vulnerability-research</a></li>
+              
+              <li><a href="../../tags/false-positive">false-positive</a></li>
+              
+              <li><a href="../../tags/refutation">refutation</a></li>
+              
+              <li><a href="../../tags/integer-overflow">integer-overflow</a></li>
+              
+              <li><a href="../../tags/minifilter">minifilter</a></li>
+              
+              <li><a href="../../tags/acpi">acpi</a></li>
+              
+              <li><a href="../../tags/efs">efs</a></li>
+              
+              <li><a href="../../tags/ksecdd">ksecdd</a></li>
+              
+              <li><a href="../../tags/ahcache">ahcache</a></li>
+              
+              <li><a href="../../tags/filecrypt">filecrypt</a></li>
+              
+              <li><a href="../../tags/bindflt">bindflt</a></li>
+              
+              <li><a href="../../tags/intelpep">intelpep</a></li>
+              
+              <li><a href="../../tags/msrc">msrc</a></li>
+              
+              <li><a href="../../tags/code-archaeology">code-archaeology</a></li>
+              
+            </ul>
+          </nav>
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2026  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+</div>
+    </body>
+</html>

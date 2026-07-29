@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html><head lang="en">
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>The Sandbox Broker That Couldn&#39;t Be Confused - Forging an AppContainer Token to Reach bfs.sys and Failing to Path-Confuse a File Broker That Re-Runs the Access Check in the Caller&#39;s Own Context on Windows 11 24H2 - Leandro&#39;s Code Cave</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="A reverse-engineering write-up of a refuted sandbox-escape candidate in bfs.sys the Brokering File System on Windows 11 24H2 build 26100 - the device opens for a normal token and its per-IOCTL capability gate is passable by forging an AppContainer lowbox token carrying bfs&#39;s capability SID via NtCreateLowBoxToken, but the path and rename brokering opens every target with OBJ_FORCE_ACCESS_CHECK in the caller&#39;s own non-impersonated context against an FLT-normalized canonical name, so the broker can only ever touch files the sandbox could already open itself, leaving no path confusion, no TOCTOU, no privilege amplification, and nothing to report." />
+	<meta property="og:image" content=""/>
+	<meta property="og:url" content="https://iamleandrooooo.github.io/posts/the-broker-that-rechecks-access/">
+  <meta property="og:site_name" content="Leandro&#39;s Code Cave">
+  <meta property="og:title" content="The Sandbox Broker That Couldn&#39;t Be Confused - Forging an AppContainer Token to Reach bfs.sys and Failing to Path-Confuse a File Broker That Re-Runs the Access Check in the Caller&#39;s Own Context on Windows 11 24H2">
+  <meta property="og:description" content="A reverse-engineering write-up of a refuted sandbox-escape candidate in bfs.sys the Brokering File System on Windows 11 24H2 build 26100 - the device opens for a normal token and its per-IOCTL capability gate is passable by forging an AppContainer lowbox token carrying bfs&#39;s capability SID via NtCreateLowBoxToken, but the path and rename brokering opens every target with OBJ_FORCE_ACCESS_CHECK in the caller&#39;s own non-impersonated context against an FLT-normalized canonical name, so the broker can only ever touch files the sandbox could already open itself, leaving no path confusion, no TOCTOU, no privilege amplification, and nothing to report.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-07-08T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-08T00:00:00+00:00">
+    <meta property="article:tag" content="Windows">
+    <meta property="article:tag" content="Kernel">
+    <meta property="article:tag" content="Reversing">
+    <meta property="article:tag" content="Ghidra">
+    <meta property="article:tag" content="Bfs">
+    <meta property="article:tag" content="Brokering-File-System">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="The Sandbox Broker That Couldn&#39;t Be Confused - Forging an AppContainer Token to Reach bfs.sys and Failing to Path-Confuse a File Broker That Re-Runs the Access Check in the Caller&#39;s Own Context on Windows 11 24H2">
+  <meta name="twitter:description" content="A reverse-engineering write-up of a refuted sandbox-escape candidate in bfs.sys the Brokering File System on Windows 11 24H2 build 26100 - the device opens for a normal token and its per-IOCTL capability gate is passable by forging an AppContainer lowbox token carrying bfs&#39;s capability SID via NtCreateLowBoxToken, but the path and rename brokering opens every target with OBJ_FORCE_ACCESS_CHECK in the caller&#39;s own non-impersonated context against an FLT-normalized canonical name, so the broker can only ever touch files the sandbox could already open itself, leaving no path confusion, no TOCTOU, no privilege amplification, and nothing to report.">
+
+        <link href="https://iamleandrooooo.github.io/css/fonts.2c2227b81b1970a03e760aa2e6121cd01f87c88586803cbb282aa224720a765f.css" rel="stylesheet">
+	
+
+	
+	<link rel="stylesheet" type="text/css" media="screen" href="https://iamleandrooooo.github.io/css/main.b0bfd4c1c007ce46fdc69a6e3de4f0b25506edf76237167518be43f19df70205.css" />
+		<link id="darkModeStyle" rel="stylesheet" type="text/css" href="https://iamleandrooooo.github.io/css/dark.6cfa4c73670a694b4297832c956ee7536c42d3f2c7ad8358e1da5070ec4f5a55.css"  disabled />
+</head>
+<body>
+        <div class="content"><header>
+	<div class="main">
+		<a href="https://iamleandrooooo.github.io/">Leandro&#39;s Code Cave</a>
+	</div>
+	<nav>
+		
+		<a href="../../">Home</a>
+		
+		<a href="../../posts">All posts</a>
+		
+		<a href="../../about">About</a>
+		
+		<a href="../../tags">Tags</a>
+		
+		<button id="dark-mode-toggle" class="nav-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" type="button"><svg class="feather" viewBox="0 0 24 24" fill="none" stroke="#232333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg></button>
+		<script src="https://iamleandrooooo.github.io/js/themetoggle.js"></script>
+		
+	</nav>
+</header>
+
+<main>
+  <article>
+    <div class="post-container">
+      
+      <div class="post-content">
+        <div class="title">
+          <h1 class="title">The Sandbox Broker That Couldn&#39;t Be Confused - Forging an AppContainer Token to Reach bfs.sys and Failing to Path-Confuse a File Broker That Re-Runs the Access Check in the Caller&#39;s Own Context on Windows 11 24H2</h1>
+          <div class="meta">Posted on Jul 8, 2026</div>
+        </div>
+        
+        <div class="tldr">
+          <strong>tl;dr:</strong>
+          This write-up reverse-engineers bfs.sys on Windows 11 24H2 (build 26100), the Brokering File System that mediates filesystem access for AppContainer and sandboxed callers, and walks a sandbox-escape candidate from a promising reachability result to an intrinsic refutation. \Device\Bfs has no \GLOBAL?? symlink but its default security descriptor lets a normal token open it through \\?\GLOBALROOT\Device\Bfs, and each of its six IOCTLs is gated by FUN_140001280, which calls SeQueryInformationToken for AppContainer status and RtlCheckTokenCapability for a bfs-specific capability SID (DAT_14001b1d0, dumpable with kd dd bfs&#43;0x1b1d0) against the caller-supplied token - a gate a normal user can pass by forging an AppContainer lowbox token that carries that capability via NtCreateLowBoxToken. The obvious target is the path and rename brokering IOCTL 0x228004 (FUN_14000ab30), the classic confused-deputy shape where a broker opens a privileged file on behalf of a sandbox that could not open it directly. It is refuted intrinsically - the broker opens the target with attributes 0x600 (OBJ_FORCE_ACCESS_CHECK plus OBJ_KERNEL_HANDLE) in the caller&#39;s own non-impersonated context, so the NT access check is re-run as the sandbox itself and the broker can only ever touch files the sandbox could already reach, and the brokering is not a privileged filesystem mutation but an in-memory grant table keyed on the FLT-normalized canonical name, closing any path-normalization or TOCTOU window, with probed and length-bounded input and no double-fetch. A broker that re-checks access in the caller&#39;s security context cannot be confused into amplifying privilege and there was nothing to report.
+        </div>
+        <section class="body">
+          <h2 id="1-what-a-file-broker-is-and-why-it-is-a-sandbox-escape-target">1. What a file broker is, and why it is a sandbox-escape target</h2>
+<p>An AppContainer (or otherwise sandboxed) process cannot touch the filesystem directly - its token carries a restricted capability set, and the object manager denies it any <code>FILE</code> object outside that set. To do legitimate file work it has to ask a <strong>broker</strong>: a more-privileged component that performs the operation on the sandbox&rsquo;s behalf and hands back the result. <code>bfs.sys</code> - the <strong>Brokering File System</strong> - is a kernel-mode broker for exactly this.</p>
+<p>That asymmetry is the whole attraction. The broker runs with more authority than the sandbox that calls it, so the escape is the classic <strong>confused deputy</strong>: convince the broker to open, rename, or otherwise touch a file the sandbox itself could never reach - via path confusion (a name that resolves one way for the broker&rsquo;s check and another for its open), a TOCTOU swap between check and use, a symlink, or a grant-table mixup - and have it hand you the result. If the broker opens <code>\Device\HarddiskVolume3\Windows\System32\...</code> &ldquo;for you&rdquo; and returns a usable handle, you&rsquo;ve walked out of the sandbox.</p>
+<p>So I went to see whether <code>bfs</code> could be talked into it.</p>
+<h2 id="2-reaching-the-surface---the-device-and-the-capability-gate">2. Reaching the surface - the device and the capability gate</h2>
+<p><code>bfs</code> exposes <code>\Device\Bfs</code>. There is no <code>\GLOBAL??</code> (Win32) symlink for it, so you reach it through the native namespace:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>HANDLE h <span style="color:#f92672">=</span> <span style="color:#a6e22e">CreateFileA</span>(<span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\\\\</span><span style="color:#e6db74">?</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">GLOBALROOT</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Device</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Bfs&#34;</span>,
+</span></span><span style="display:flex;"><span>                       GENERIC_READ <span style="color:#f92672">|</span> GENERIC_WRITE,
+</span></span><span style="display:flex;"><span>                       FILE_SHARE_READ <span style="color:#f92672">|</span> FILE_SHARE_WRITE,
+</span></span><span style="display:flex;"><span>                       NULL, OPEN_EXISTING, <span style="color:#ae81ff">0</span>, NULL);
+</span></span></code></pre></div><p>The device&rsquo;s default security descriptor permits a normal token to <strong>open</strong> it. But opening the device is not the same as reaching its IOCTL handlers - each of the six IOCTLs first runs a gate, <code>FUN_140001280</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// FUN_140001280 (per-IOCTL gate), reconstructed
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">SeQueryInformationToken</span>(token, TokenIsAppContainer, ...) <span style="color:#f92672">||</span> <span style="color:#f92672">!</span>isAppContainer)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> STATUS_ACCESS_DENIED;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">RtlCheckTokenCapability</span>(token, <span style="color:#f92672">&amp;</span>BfsCapabilitySid <span style="color:#75715e">/* DAT_14001b1d0 */</span>, <span style="color:#f92672">&amp;</span>has) <span style="color:#f92672">||</span> <span style="color:#f92672">!</span>has)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0xC000A200</span>;                 <span style="color:#75715e">// STATUS_... capability not held
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// ... proceed to the handler
+</span></span></span></code></pre></div><p>Two conditions on the <strong>caller-supplied token</strong>: it must be an AppContainer token, and it must hold a specific <strong>bfs capability SID</strong> baked into the driver at <code>DAT_14001b1d0</code> (you can read it straight out of the image with <code>kd&gt; dd bfs+0x1b1d0</code>). A normal, non-AppContainer token fails at the first check. My reachability probe confirms exactly that boundary - the device opens, the IOCTL is rejected:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// bfs_probe.c -- reachability probe (build: gcc bfs_probe.c -o bfs_probe.exe), run NON-elevated
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>HANDLE h <span style="color:#f92672">=</span> <span style="color:#a6e22e">CreateFileA</span>(<span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\\\\</span><span style="color:#e6db74">?</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">GLOBALROOT</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Device</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Bfs&#34;</span>, GENERIC_READ<span style="color:#f92672">|</span>GENERIC_WRITE,
+</span></span><span style="display:flex;"><span>                       FILE_SHARE_READ<span style="color:#f92672">|</span>FILE_SHARE_WRITE, NULL, OPEN_EXISTING, <span style="color:#ae81ff">0</span>, NULL);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (h <span style="color:#f92672">==</span> INVALID_HANDLE_VALUE) { <span style="color:#a6e22e">printf</span>(<span style="color:#e6db74">&#34;[!] open failed %lu</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, <span style="color:#a6e22e">GetLastError</span>()); <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">1</span>; }
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printf</span>(<span style="color:#e6db74">&#34;[+] opened </span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Device</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">Bfs (device SD permits this token)</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>HANDLE tok <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">OpenProcessToken</span>(<span style="color:#a6e22e">GetCurrentProcess</span>(), TOKEN_QUERY<span style="color:#f92672">|</span>TOKEN_DUPLICATE<span style="color:#f92672">|</span>TOKEN_IMPERSONATE, <span style="color:#f92672">&amp;</span>tok);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">char</span> in[<span style="color:#ae81ff">0x40</span>] <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>}, out[<span style="color:#ae81ff">0x200</span>];
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>(<span style="color:#66d9ef">void</span><span style="color:#f92672">**</span>)(in<span style="color:#f92672">+</span><span style="color:#ae81ff">0</span>) <span style="color:#f92672">=</span> tok;                       <span style="color:#75715e">// input[0] = token handle
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>DWORD br <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>BOOL ok <span style="color:#f92672">=</span> <span style="color:#a6e22e">DeviceIoControl</span>(h, <span style="color:#ae81ff">0x224008</span>, in, <span style="color:#66d9ef">sizeof</span>(in), out, <span style="color:#66d9ef">sizeof</span>(out), <span style="color:#f92672">&amp;</span>br, NULL);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// -&gt; FAIL, err = capability gate: a plain token is rejected; need a lowbox token
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">//    carrying the bfs capability SID.
+</span></span></span></code></pre></div><p>So the surface is gated behind an AppContainer capability. That sounds like a wall. It is not.</p>
+<h2 id="3-passing-the-gate---forge-the-lowbox-token">3. Passing the gate - forge the lowbox token</h2>
+<p>The gate checks <em>the caller&rsquo;s own token</em> for a capability - and on Windows a normal user can <strong>mint an AppContainer token with whatever capabilities they like</strong>, no privilege required, via <code>NtCreateLowBoxToken</code>. You dump the capability SID from the driver, build a <code>SID_AND_ATTRIBUTES</code> array containing it, and create a lowbox token off your current one:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// pass the gate: craft a lowbox (AppContainer) token carrying the bfs capability SID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>SID_AND_ATTRIBUTES caps[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>caps[<span style="color:#ae81ff">0</span>].Sid        <span style="color:#f92672">=</span> BfsCapabilitySid;        <span style="color:#75715e">// = the SID at bfs+0x1b1d0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>caps[<span style="color:#ae81ff">0</span>].Attributes <span style="color:#f92672">=</span> SE_GROUP_ENABLED;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>HANDLE lowbox <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>NTSTATUS st <span style="color:#f92672">=</span> <span style="color:#a6e22e">NtCreateLowBoxToken</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>lowbox, hCurrentToken, TOKEN_ALL_ACCESS, <span style="color:#f92672">&amp;</span>objAttr,
+</span></span><span style="display:flex;"><span>        AnyPackageSid,       <span style="color:#75715e">// any AppContainer package SID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#ae81ff">1</span>, caps,             <span style="color:#75715e">// &lt;-- the forged capability set
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#ae81ff">0</span>, NULL);            <span style="color:#75715e">// no saved handles
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// impersonate `lowbox`, then re-issue the IOCTL -&gt; FUN_140001280 now passes.
+</span></span></span></code></pre></div><p>Impersonate that token, re-issue the IOCTL, and <code>FUN_140001280</code> waves you through. The full six-IOCTL surface is now reachable from an ordinary, non-elevated user.</p>
+<p>Worth stating plainly, because it is a recurring mistake: <strong>a capability check on the caller&rsquo;s own token is a reachability filter, not a security boundary.</strong> Anyone who can call <code>NtCreateLowBoxToken</code> - i.e. anyone - can carry any capability. The capability tells <code>bfs</code> &ldquo;this caller is a sandbox that wants brokering,&rdquo; not &ldquo;this caller is authorized.&rdquo; If there is a real boundary in <code>bfs</code>, it has to be somewhere else. Spoiler: it is, and it is in exactly the right place.</p>
+<h2 id="4-the-hunt---the-path--rename-brokering-ioctl-0x228004">4. The hunt - the path / rename brokering (IOCTL 0x228004)</h2>
+<p>The interesting handler is <code>FUN_14000ab30</code>, IOCTL <code>0x228004</code> - the path/rename broker. You hand it a path (two, for a rename) plus flags, and it performs the file operation. This is where a confused-deputy escape would live. The concrete attacks I was looking for:</p>
+<ul>
+<li><strong>Privilege amplification:</strong> the broker opens the target in a <em>more-privileged</em> context (SYSTEM, or an impersonation that ignores my sandbox DACL restrictions) and returns me a handle to something my token was denied.</li>
+<li><strong>Path-normalization confusion:</strong> I pass a name that normalizes to <code>X</code> when the broker validates it, but to <code>Y</code> when it opens it - <code>\??\C:\...</code> vs a symlink vs an 8.3 short name vs a differently-cased/Unicode-folded form.</li>
+<li><strong>TOCTOU:</strong> the broker checks name <code>X</code>, I swap the underlying object, and it opens <code>Y</code>.</li>
+</ul>
+<p>All three are the standard ways brokers fall over.</p>
+<h2 id="5-the-refutation---obj_force_access_check-in-the-callers-own-context">5. The refutation - <code>OBJ_FORCE_ACCESS_CHECK</code> in the caller&rsquo;s own context</h2>
+<p><code>FUN_14000ab30</code> opens the brokered target with an <code>OBJECT_ATTRIBUTES</code> whose <code>Attributes</code> field is <code>0x600</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-fallback" data-lang="fallback"><span style="display:flex;"><span>0x600 = OBJ_FORCE_ACCESS_CHECK (0x400) | OBJ_KERNEL_HANDLE (0x200)
+</span></span></code></pre></div><p>The load-bearing bit is <code>OBJ_FORCE_ACCESS_CHECK</code>. Normally, a <code>ZwCreateFile</code>/<code>ZwOpenFile</code> issued from kernel mode runs with <code>PreviousMode == KernelMode</code> and the object manager <strong>skips</strong> the access check entirely - kernel code is trusted. <code>OBJ_FORCE_ACCESS_CHECK</code> overrides that: it forces a full <code>SeAccessCheck</code> even though the open originates in the kernel. And crucially, <code>bfs</code> performs this open in the <strong>caller&rsquo;s own, non-impersonated security context</strong> - the access check is evaluated against <em>the sandbox&rsquo;s token</em>, not the broker&rsquo;s.</p>
+<p>Follow the consequence through. The broker&rsquo;s open of <code>\...\Windows\System32\config\SAM</code> (or any other juicy target) is access-checked as <em>you</em>, the AppContainer caller. Your restricted token gets <code>STATUS_ACCESS_DENIED</code> for exactly the things it would be denied if it tried to open them directly. <strong>The broker can only ever open what the sandbox could already open itself.</strong> It is not a confused deputy, because for the purpose of the access decision it wields no more authority than its caller. Mediating the access does not <em>grant</em> the access.</p>
+<p>That collapses the whole bug class, and it also disarms the path-confusion and TOCTOU angles - but <code>bfs</code> closes those a second way too. The brokering here is not a privileged filesystem mutation performed behind a separate check; the operation is recorded in an <strong>in-memory grant table keyed on the FLT-normalized canonical name</strong>. FltMgr normalizes the path to its canonical form <em>before</em> it becomes the table key <strong>and</strong> before the access check, so the &ldquo;name I checked&rdquo; and the &ldquo;name I used&rdquo; are the same normalized string. There is no <code>\??\</code>-vs-symlink-vs-8.3 gap to slip through, and no window between a check on one name and an open of another. The input path buffers are probed and copied with a length-bounded <code>memmove</code>; there is no double-fetch of the length or the path. So there is no normalization confusion and no TOCTOU on the name either.</p>
+<p>Verdict on <code>FUN_14000ab30</code>: no privilege amplification, no path confusion, no TOCTOU, no escape. (For completeness, the sibling METHOD_NEITHER output-pack IOCTL <code>0x22400f</code> / <code>FUN_14000a200</code> is also bounded - its size-measuring pass and its write pass iterate a push-lock-snapshotted <code>'IsfB'</code> list with a byte-identical per-record size formula, so there is no grow-between-passes race and no output overflow; and a token/Job lifetime path was noted but low-priority.) The one place a broker is supposed to be exploitable, <code>bfs</code> simply is not.</p>
+<h2 id="6-the-lesson">6. The lesson</h2>
+<p>A broker is a confused-deputy risk <strong>only when it acts with more authority than its caller.</strong> <code>bfs</code> removes that at the root: <code>OBJ_FORCE_ACCESS_CHECK</code> in the caller&rsquo;s own non-impersonated context means every brokered open re-runs the caller&rsquo;s access check, so the entire &ldquo;trick the broker into opening a privileged file&rdquo; class is not <em>bounded</em> - it is <em>structurally impossible</em>. That is a genuinely nice design to see in the wild, and it is the pattern to recognize instantly the next time you open a broker: find the open, check the <code>Attributes</code>, and check whose token the access check runs against. If it is <code>OBJ_FORCE_ACCESS_CHECK</code> in the caller&rsquo;s context, the confused-deputy escape is dead before you write a line of PoC.</p>
+<p>And the reachability half is its own reminder: the capability gate looked like a wall and was a turnstile. A capability on the <em>caller&rsquo;s own token</em> is a filter, not a boundary, because the caller can forge the token. The real boundary was never the gate - it was the access check, and <code>bfs</code> put it exactly where it belongs.</p>
+<h2 id="7-closing">7. Closing</h2>
+<p>The interesting brokers are the ones that <em>don&rsquo;t</em> re-check access - the ones that open as SYSTEM and hand you the handle. <code>bfs</code> is not one of them, and the honest write-up is: I did the work to reach the surface - through the native namespace, past a forged-lowbox-token capability gate - and the surface was built correctly. That is still worth publishing. A documented reachability path and a clean design pattern are exactly what the next person wants when they open <code>\Device\Bfs</code> expecting an easy sandbox escape and need to know, quickly, that the door is actually locked from the right side.</p>
+
+        </section>
+        <div class="post-tags">
+          
+          
+          <nav class="nav tags">
+            <ul class="tags">
+              
+              <li><a href="../../tags/windows">windows</a></li>
+              
+              <li><a href="../../tags/kernel">kernel</a></li>
+              
+              <li><a href="../../tags/reversing">reversing</a></li>
+              
+              <li><a href="../../tags/ghidra">ghidra</a></li>
+              
+              <li><a href="../../tags/bfs">bfs</a></li>
+              
+              <li><a href="../../tags/brokering-file-system">brokering-file-system</a></li>
+              
+              <li><a href="../../tags/appcontainer">appcontainer</a></li>
+              
+              <li><a href="../../tags/sandbox">sandbox</a></li>
+              
+              <li><a href="../../tags/lowbox-token">lowbox-token</a></li>
+              
+              <li><a href="../../tags/ntcreatelowboxtoken">ntcreatelowboxtoken</a></li>
+              
+              <li><a href="../../tags/capability-sid">capability-sid</a></li>
+              
+              <li><a href="../../tags/access-check">access-check</a></li>
+              
+              <li><a href="../../tags/confused-deputy">confused-deputy</a></li>
+              
+              <li><a href="../../tags/path-confusion">path-confusion</a></li>
+              
+              <li><a href="../../tags/toctou">toctou</a></li>
+              
+              <li><a href="../../tags/refuted">refuted</a></li>
+              
+              <li><a href="../../tags/false-positive">false-positive</a></li>
+              
+              <li><a href="../../tags/vulnerability-research">vulnerability-research</a></li>
+              
+              <li><a href="../../tags/msrc">msrc</a></li>
+              
+              <li><a href="../../tags/24h2">24h2</a></li>
+              
+            </ul>
+          </nav>
+          
+          
+        </div>
+      </div>
+
+      
+      
+    </div>
+
+    </article>
+</main>
+<footer>
+  <div style="display:flex"></div>
+  <div class="footer-info">
+    2026  <a
+      href="https://github.com/athul/archie">Archie Theme</a> | Built with <a href="https://gohugo.io">Hugo</a>
+  </div>
+</footer>
+
+
+  
+
+
+
+</div>
+    </body>
+</html>
