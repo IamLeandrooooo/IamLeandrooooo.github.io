@@ -62,7 +62,7 @@
       <link>https://iamleandrooooo.github.io/about/</link>
       <pubDate>Sat, 13 Sep 2025 00:00:00 +0000</pubDate>
       <guid>https://iamleandrooooo.github.io/about/</guid>
-      <description>Hey, I&amp;rsquo;m Leandro(lee-AHN-droo)! I work as a Red Teamer, and spend my days hunting down security flaws, tinkering with code, and figuring out how systems can break.&#xA;I&amp;rsquo;ve collected a few certifications along the way (OSCE3, OSWE, OSED, OSEP, OSCP, OSWP, CRTP, GCIH, etc.), and a few CVEs(waiting for a few more to be published):&#xA;CVE-2025-28168 CVE-2026-26273 CVE-2026-26281 CVE-2026-26270 CVE-2026-40888 CVE-2026-49849 I actually started in software engineering, so I know my way around development, and architecture before diving headfirst into security.</description>
+      <description>Hey, I&amp;rsquo;m Leandro(lee-AHN-droo)! I work as a Red Teamer, and spend my days hunting down security flaws, tinkering with code, and figuring out how systems can break.&#xA;I&amp;rsquo;ve collected a few certifications along the way (OSCE3, OSWE, OSED, OSEP, OSCP, OSWP, CRTP, GCIH, etc.), and a few CVEs:&#xA;CVE-2025-28168 CVE-2026-26273 CVE-2026-26281 CVE-2026-26270 CVE-2026-40888 CVE-2026-49849 CVE-2026-54758 I actually started in software engineering, so I know my way around development, and architecture before diving headfirst into security.</description>
     </item>
     <item>
       <title>RC4 Reverse Engineering</title>
