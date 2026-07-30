@@ -8,7 +8,7 @@ author = "Leandro"
 
 Hey, I'm Leandro(lee-AHN-droo)! I work as a Red Teamer, and spend my days hunting down security flaws, tinkering with code, and figuring out how systems can break.
 
-I've collected a few certifications along the way (**OSCE3, OSWE, OSED, OSEP, OSCP, OSWP, CRTP, GCIH**, etc.), and a few CVEs(waiting for a few more to be published):
+I've collected a few certifications along the way (**OSCE3, OSWE, OSED, OSEP, OSCP, OSWP, CRTP, GCIH**, etc.), and a few CVEs:
 
 - CVE-2025-28168  
 - CVE-2026-26273  
@@ -16,6 +16,7 @@ I've collected a few certifications along the way (**OSCE3, OSWE, OSED, OSEP, OS
 - CVE-2026-26270  
 - CVE-2026-40888
 - CVE-2026-49849
+- CVE-2026-54758
 
 I actually started in software engineering, so I know my way around development, and architecture before diving headfirst into security.
 
